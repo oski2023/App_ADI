@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route } from 'react-router-dom'
 import AppLayout from './shared/components/AppLayout'
 import DashboardPage from './features/dashboard/DashboardPage'
 import CoursesPage from './features/courses/CoursesPage'
@@ -64,7 +64,7 @@ export default function App() {
     }, [initSync])
 
     return (
-        <BrowserRouter>
+        <HashRouter>
             <Routes>
                 <Route element={<AppLayout />}>
                     <Route path="/" element={<DashboardPage />} />
@@ -80,6 +80,6 @@ export default function App() {
                 </Route>
             </Routes>
             <Toaster position="bottom-right" toastOptions={{ className: 'text-sm font-medium rounded-lg shadow-lg' }} />
-        </BrowserRouter>
+        </HashRouter>
     )
 }
