@@ -36,6 +36,10 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+      - name: Create env file
+        run: |
+        echo "VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}" >> .env.local
+        echo "VITE_GOOGLE_API_KEY=${{ secrets.VITE_GOOGLE_API_KEY }}" >> .env.local    
       - name: Install dependencies
         run: npm install
       - name: Build
