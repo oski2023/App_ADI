@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Card, CardBody } from '../../shared/components/Card'
+import { Card, CardBody, CardHeader } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import Badge from '../../shared/components/Badge'
 import { Select, Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import EmptyState from '../../shared/components/EmptyState'
-import { BookOpen, Plus, Edit2, Trash2, Save } from 'lucide-react'
+import { BookOpen, Plus, Edit2, Trash2, Save, GraduationCap, TrendingUp, CheckCircle2, AlertCircle, Info, ChevronRight, Calculator, Users, X } from 'lucide-react'
 import useGradeStore from '../../core/stores/useGradeStore'
 import useCourseStore from '../../core/stores/useCourseStore'
 import useStudentStore from '../../core/stores/useStudentStore'
@@ -117,90 +117,181 @@ export default function GradesPage() {
         setShowSubjectModal(true)
     }
 
+    const totalGraded = students.filter(s => calculateFinalGrade(s.id, selectedSubject) !== null).length
+    const approvedCount = students.filter(s => isApproved(s.id, selectedSubject, passingGrade) === true).length
+    const approvalRate = students.length ? Math.round((approvedCount / students.length) * 100) : 0
+
     return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-text-primary">Materias y Notas</h1>
-                    <p className="text-sm text-text-secondary mt-1">Cargá y gestioná las notas de tus alumnos</p>
+        <div className="space-y-8 animate-fade-in relative">
+            {/* Background Glow Decorations */}
+            <div className="fixed top-20 right-20 w-[500px] h-[500px] bg-primary/5 blur-[120px] rounded-full -z-10 pointer-events-none" />
+            <div className="fixed bottom-20 left-20 w-[400px] h-[400px] bg-secondary/5 blur-[100px] rounded-full -z-10 pointer-events-none" />
+
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2 border-b border-border/10">
+                <div className="relative">
+                    <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1.5 h-12 bg-primary rounded-full hidden md:block" />
+                    <h1 className="text-4xl font-black text-text-primary tracking-tight">
+                        Gestión de <span className="text-primary">Calificaciones</span>
+                    </h1>
+                    <div className="flex items-center gap-2 mt-2 text-sm text-text-secondary font-medium uppercase tracking-wider">
+                        <Calculator className="w-4 h-4 text-primary" />
+                        <span>Libreta Digital</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-border mx-1" />
+                        <span>Ciclo Lectivo 2026</span>
+                    </div>
                 </div>
-                <Button icon={Plus} variant="outline" onClick={openCreateModal}>Nueva Materia</Button>
+                <Button
+                    icon={Plus}
+                    onClick={openCreateModal}
+                    className="shadow-xl shadow-primary/20 hover:scale-105 transition-transform"
+                >
+                    Nueva Materia
+                </Button>
             </div>
 
-            <div className="flex gap-4 items-end">
-                <Select
-                    id="gradeCourse" label="Curso" value={selectedCourse}
-                    options={courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}" — ${c.shift}` }))}
-                    onChange={(e) => { setSelectedCourse(e.target.value); setSelectedSubject('') }}
-                    className="w-64"
-                />
-                <Select
-                    id="subject" label="Materia" value={selectedSubject}
-                    options={courseSubjects.map((s) => ({ value: s.id, label: s.name }))}
-                    onChange={(e) => handleSubjectSelection(e.target.value)}
-                    placeholder="Seleccionar materia..."
-                    className="w-64"
-                />
+            {/* Selection Filters */}
+            <div className="p-6 rounded-3xl bg-bg-card border border-border shadow-xl shadow-black/5 flex flex-wrap gap-6 items-end relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+
+                <div className="flex-1 min-w-[280px]">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1 mb-2 block">Seleccionar Curso</label>
+                    <Select
+                        id="gradeCourse" label="" value={selectedCourse}
+                        options={courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}" — ${c.shift}` }))}
+                        onChange={(e) => { setSelectedCourse(e.target.value); setSelectedSubject('') }}
+                        className="!bg-bg-hover/50 !border-transparent focus:!border-primary/30"
+                    />
+                </div>
+                <div className="flex-1 min-w-[280px]">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1 mb-2 block">Materia / Asignatura</label>
+                    <Select
+                        id="subject" label="" value={selectedSubject}
+                        options={courseSubjects.map((s) => ({ value: s.id, label: s.name }))}
+                        onChange={(e) => handleSubjectSelection(e.target.value)}
+                        placeholder="Seleccionar materia..."
+                        className="!bg-bg-hover/50 !border-transparent focus:!border-primary/30"
+                    />
+                </div>
             </div>
+
+            {/* Subject Context Stats */}
+            {selectedSubject && students.length > 0 && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 animate-slide-in">
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-bg-card to-primary/10 border border-white/10 shadow-sm">
+                        <div className="bg-bg-card/50 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-text-primary leading-none">{students.length}</p>
+                            <div className="flex items-center gap-2 mt-2 font-bold text-text-muted text-[10px] uppercase tracking-widest">
+                                <Users className="w-3.5 h-3.5" /> Alumnos
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-bg-card to-secondary/10 border border-white/10 shadow-sm">
+                        <div className="bg-bg-card/50 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-secondary leading-none">{totalGraded}</p>
+                            <div className="flex items-center gap-2 mt-2 font-bold text-secondary text-[10px] uppercase tracking-widest">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Calificados
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-bg-card to-warning/10 border border-white/10 shadow-sm">
+                        <div className="bg-bg-card/50 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-warning leading-none">{approvalRate}%</p>
+                            <div className="flex items-center gap-2 mt-2 font-bold text-warning text-[10px] uppercase tracking-widest">
+                                <TrendingUp className="w-3.5 h-3.5" /> Tasa Aprob.
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-bg-card to-error/10 border border-white/10 shadow-sm">
+                        <div className="bg-bg-card/50 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-error leading-none">{students.length - approvedCount}</p>
+                            <div className="flex items-center gap-2 mt-2 font-bold text-error text-[10px] uppercase tracking-widest">
+                                <AlertCircle className="w-3.5 h-3.5" /> En Riesgo
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {!selectedSubject ? (
-                <EmptyState icon={BookOpen} title="Seleccioná una materia" description="Elegí un curso y materia para ver y cargar las notas." />
+                <EmptyState icon={GraduationCap} title="Panel de Notas" description="Selecciona un curso y materia para comenzar la carga de calificaciones." />
             ) : (
-                <Card className="overflow-hidden">
-                    <div className="overflow-x-auto w-full pb-2">
-                        <table className="w-full text-left border-collapse min-w-[800px]">
+                <Card className="border-none shadow-xl shadow-black/5 overflow-hidden !rounded-3xl">
+                    <CardHeader
+                        className="!border-none pt-6 bg-gradient-to-r from-bg-card to-primary/5"
+                        action={
+                            <button
+                                onClick={() => setSelectedSubject('')}
+                                className="w-10 h-10 rounded-xl bg-bg-hover text-text-muted hover:bg-error/10 hover:text-error transition-all flex items-center justify-center border border-border/50 group/close"
+                                title="Cerrar Planilla"
+                            >
+                                <X className="w-5 h-5 group-hover/close:rotate-90 transition-transform duration-300" />
+                            </button>
+                        }
+                    >
+                        <h2 className="text-xl font-black text-text-primary tracking-tight">Registro de Notas: {subject?.name}</h2>
+                    </CardHeader>
+                    <div className="overflow-x-auto w-full">
+                        <table className="w-full text-left border-separate border-spacing-0">
                             <thead>
-                                <tr className="border-b border-border bg-bg-hover/50">
-                                    <th className="text-left text-xs font-semibold text-text-muted uppercase tracking-wider px-5 py-3 sticky left-0 z-10 bg-bg-card whitespace-nowrap">Alumno</th>
+                                <tr className="bg-bg-hover/30 text-[10px] text-text-muted font-bold uppercase tracking-widest">
+                                    <th className="px-6 py-4 border-b border-border/50 sticky left-0 z-20 bg-bg-card backdrop-blur-md">Alumno</th>
                                     {(subject?.weights || []).map((w, i) => (
-                                        <th key={i} className="text-center text-xs font-semibold text-text-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">
-                                            Parcial {i + 1}
-                                            <span className="block text-[10px] font-normal">({w}%)</span>
+                                        <th key={i} className="px-4 py-4 border-b border-border/50 text-center whitespace-nowrap">
+                                            {i + 1}° Parcial
+                                            <span className="block text-[8px] opacity-60 mt-0.5">{w}% Peso</span>
                                         </th>
                                     ))}
-                                    <th className="text-center text-xs font-semibold text-text-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">Nota Final</th>
-                                    <th className="text-center text-xs font-semibold text-text-muted uppercase tracking-wider px-4 py-3 whitespace-nowrap">Estado</th>
+                                    <th className="px-6 py-4 border-b border-border/50 text-center">Nota Final</th>
+                                    <th className="px-6 py-4 border-b border-border/50 text-center">Estado Académico</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-border/30">
                                 {students.map((student) => {
                                     const grades = getGrades(student.id, selectedSubject)
                                     const finalGrade = calculateFinalGrade(student.id, selectedSubject)
-                                    const approved = isApproved(student.id, selectedSubject)
+                                    const approved = isApproved(student.id, selectedSubject, passingGrade)
 
                                     return (
-                                        <tr key={student.id} className="border-b border-border-light hover:bg-bg-hover transition-colors">
-                                            <td className="px-5 py-3 sticky left-0 z-10 bg-bg-card border-r border-border-light/50">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary/70 to-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-                                                        {student.name[0]}{student.lastName[0]}
+                                        <tr key={student.id} className="hover:bg-primary/5 transition-all group">
+                                            <td className="px-6 py-4 sticky left-0 z-10 bg-bg-card border-r border-border/30 group-hover:bg-bg-hover/50 transition-colors">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center text-white text-xs font-black shadow-lg shadow-primary/20 group-hover:scale-110 transition-transform">
+                                                        {student.lastName[0]}{student.name[0]}
                                                     </div>
-                                                    <span className="text-sm font-medium text-text-primary whitespace-nowrap">{student.lastName}, {student.name}</span>
+                                                    <div>
+                                                        <p className="text-sm font-black text-text-primary tracking-tight group-hover:text-primary transition-colors">
+                                                            {student.lastName}, {student.name}
+                                                        </p>
+                                                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">DNI {student.dni}</p>
+                                                    </div>
                                                 </div>
                                             </td>
                                             {(subject?.weights || []).map((_, i) => (
-                                                <td key={i} className="px-4 py-3 text-center">
-                                                    <input
-                                                        type="number" min="0" max="10" step="0.5"
-                                                        value={grades[i] ?? ''}
-                                                        onChange={(e) => handleGradeChange(student.id, i, e.target.value)}
-                                                        className="w-16 text-center px-2 py-1.5 rounded-lg border border-border text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 bg-bg-card"
-                                                        placeholder="—"
-                                                    />
+                                                <td key={i} className="px-4 py-4 text-center">
+                                                    <div className="relative inline-block">
+                                                        <input
+                                                            type="number" min="0" max="10" step="0.5"
+                                                            value={grades[i] ?? ''}
+                                                            onChange={(e) => handleGradeChange(student.id, i, e.target.value)}
+                                                            className={`w-14 text-center py-2 rounded-xl border border-transparent bg-bg-hover/50 text-sm font-black text-text-primary outline-none focus:bg-bg-card focus:border-primary/30 focus:ring-4 focus:ring-primary/5 transition-all ${grades[i] !== null ? 'opacity-100' : 'opacity-40'}`}
+                                                            placeholder="—"
+                                                        />
+                                                    </div>
                                                 </td>
                                             ))}
-                                            <td className="px-4 py-3 text-center">
-                                                <span className={`text-lg font-bold ${approved === true ? 'text-secondary' : approved === false ? 'text-error' : 'text-text-muted'}`}>
-                                                    {finalGrade !== null ? finalGrade.toFixed(1) : '—'}
-                                                </span>
+                                            <td className="px-6 py-4 text-center">
+                                                <div className={`text-xl font-black tracking-tighter ${approved === true ? 'text-secondary' : approved === false ? 'text-error' : 'text-text-muted/40'}`}>
+                                                    {finalGrade !== null ? finalGrade.toFixed(1) : '————'}
+                                                </div>
                                             </td>
-                                            <td className="px-4 py-3 text-center">
+                                            <td className="px-6 py-4 text-center">
                                                 {approved === true ? (
-                                                    <Badge variant="success">Aprobado</Badge>
+                                                    <Badge variant="success" className="!rounded-lg !px-3 font-black text-[10px]">Aprobado</Badge>
                                                 ) : approved === false ? (
-                                                    <Badge variant="error">Reprobado</Badge>
+                                                    <Badge variant="error" className="!rounded-lg !px-3 font-black text-[10px]">Intensifica</Badge>
                                                 ) : (
-                                                    <Badge variant="neutral">Pendiente</Badge>
+                                                    <Badge variant="neutral" className="!rounded-lg !px-3 font-black text-[10px] opacity-40">Sin Carga</Badge>
                                                 )}
                                             </td>
                                         </tr>

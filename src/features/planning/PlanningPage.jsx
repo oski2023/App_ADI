@@ -12,6 +12,9 @@ import useCourseStore from '../../core/stores/useCourseStore'
 import usePlanningStore from '../../core/stores/usePlanningStore'
 import { DAYS_FULL_ES } from '../../core/constants'
 import toast from 'react-hot-toast'
+import useAuthStore from '../../core/stores/useAuthStore'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
 
 const HOURS = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']
 const WEEK_DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes']
@@ -57,6 +60,44 @@ export default function PlanningPage() {
     const [viewMode, setViewMode] = useState('grid') // 'grid' or 'list'
     const [isEditingMode, setIsEditingMode] = useState(false)
 
+    const exportToPDF = () => {
+        const doc = jsPDF({ orientation: 'landscape' })
+        const { user } = useAuthStore.getState()
+        doc.setFontSize(22)
+        doc.setTextColor(26, 86, 160)
+        doc.text(`PLANIFICACIÓN SEMANAL`, 14, 20)
+
+        doc.setFontSize(14)
+        doc.setTextColor(100, 116, 139)
+        doc.text(`Docente: ${user?.name || 'Docente'}`, 14, 30)
+        doc.text(`Curso: ${course ? `${course.year} "${course.division}"` : 'General'}`, 14, 38)
+        doc.text(`Materia(s): ${course?.subjects.join(', ') || '-'}`, 14, 46)
+
+        const tableColumn = ["Hora", ...WEEK_DAYS]
+        const tableRows = []
+
+        HOURS.forEach(hour => {
+            const rowData = [hour]
+            WEEK_DAYS.forEach(day => {
+                rowData.push(currentCoursePlan[`${day}_${hour}`] || '-')
+            })
+            tableRows.push(rowData)
+        })
+
+        doc.autoTable({
+            head: [tableColumn],
+            body: tableRows,
+            startY: 55,
+            theme: 'grid',
+            headStyles: { fillColor: [26, 86, 160], fontSize: 10, halign: 'center' },
+            bodyStyles: { fontSize: 9, cellPadding: 4 },
+            columnStyles: { 0: { fontStyle: 'bold', fillColor: [241, 142, 45, 0.05] } }
+        })
+
+        doc.save(`Planificacion_${course ? `${course.year}_${course.division}` : 'ADI'}.pdf`)
+        toast.success('PDF generado con éxito')
+    }
+
     const planningList = useMemo(() => {
         const list = []
         WEEK_DAYS.forEach(day => {
@@ -92,6 +133,13 @@ export default function PlanningPage() {
                         onClick={() => setIsEditingMode(!isEditingMode)}
                     >
                         {isEditingMode ? 'Modo Lectura' : 'Modificar'}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        icon={FileText}
+                        onClick={exportToPDF}
+                    >
+                        PDF
                     </Button>
                 </div>
             </div>

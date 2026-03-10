@@ -63,10 +63,10 @@ const useGradeStore = create(
                 return Math.round((weightedSum / totalWeight) * 10) / 10
             },
 
-            isApproved: (studentId, subjectId) => {
+            isApproved: (studentId, subjectId, passingGrade = DEFAULT_SETTINGS.passingGrade) => {
                 const finalGrade = get().calculateFinalGrade(studentId, subjectId)
                 if (finalGrade === null) return null
-                return finalGrade >= DEFAULT_SETTINGS.passingGrade
+                return finalGrade >= passingGrade
             },
 
             getSubjectsByCourse: (courseId, courses) => {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { Plus, Edit2, Trash2, Upload, Eye, Search, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Edit2, Trash2, Upload, Eye, Search, ChevronLeft, ChevronRight, GraduationCap, Users, UserPlus, FileSpreadsheet, Mail, Phone, Calendar, Hash, Info, TrendingUp, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import Modal from '../../shared/components/Modal'
@@ -11,6 +11,8 @@ import EmptyState from '../../shared/components/EmptyState'
 import useStudentStore from '../../core/stores/useStudentStore'
 import useCourseStore from '../../core/stores/useCourseStore'
 import useAttendanceStore from '../../core/stores/useAttendanceStore'
+import useGradeStore from '../../core/stores/useGradeStore'
+import useSettingsStore from '../../core/stores/useSettingsStore'
 import toast from 'react-hot-toast'
 
 import ConfirmModal from '../../shared/components/ConfirmModal'
@@ -68,6 +70,8 @@ function StudentForm({ student, courses, onSave, onCancel }) {
 
 function StudentProfile({ student, courses, onClose }) {
     const records = useAttendanceStore((s) => s.records)
+    const passingGrade = useSettingsStore((s) => s.settings.passingGrade)
+
     const computeSummary = (sid) => {
         let present = 0, absent = 0, late = 0
         Object.values(records).forEach((dr) => {
@@ -80,55 +84,149 @@ function StudentProfile({ student, courses, onClose }) {
     const course = courses.find((c) => c.id === student.courseId)
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-xl font-bold">
-                    {student.name[0]}{student.lastName[0]}
+        <div className="space-y-8 pb-4">
+            {/* Profile Header */}
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+                <div className="relative group">
+                    <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary to-primary-light flex items-center justify-center text-white text-3xl font-black shadow-xl shadow-primary/20 group-hover:scale-105 transition-transform duration-500">
+                        {student.name[0]}{student.lastName[0]}
+                    </div>
+                    <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-xl bg-bg-card border-2 border-primary flex items-center justify-center shadow-lg">
+                        <GraduationCap className="w-4 h-4 text-primary" />
+                    </div>
                 </div>
-                <div>
-                    <h3 className="text-xl font-bold text-text-primary">{student.lastName}, {student.name}</h3>
-                    <p className="text-sm text-text-secondary">{course ? `${course.year} "${course.division}" · ${course.shift}` : 'Sin curso'}</p>
-                    <Badge variant="success" className="mt-1">Activo</Badge>
-                </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-3 rounded-lg bg-bg-hover">
-                    <p className="text-xs text-text-muted">DNI</p>
-                    <p className="text-sm font-medium text-text-primary">{student.dni}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-bg-hover">
-                    <p className="text-xs text-text-muted">Fecha de Nacimiento</p>
-                    <p className="text-sm font-medium text-text-primary">{student.birthDate || '—'}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-bg-hover">
-                    <p className="text-xs text-text-muted">Teléfono</p>
-                    <p className="text-sm font-medium text-text-primary">{student.phone || '—'}</p>
-                </div>
-                <div className="p-3 rounded-lg bg-bg-hover">
-                    <p className="text-xs text-text-muted">Email Tutor</p>
-                    <p className="text-sm font-medium text-text-primary">{student.tutorEmail || '—'}</p>
+                <div className="text-center sm:text-left">
+                    <h3 className="text-3xl font-black text-text-primary tracking-tight leading-tight">{student.lastName}, {student.name}</h3>
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 mt-2">
+                        <Badge variant="primary" className="!rounded-lg !px-3 !py-1 font-bold uppercase tracking-widest text-[10px]">
+                            {course ? `${course.year} "${course.division}"` : 'Sin asignar'}
+                        </Badge>
+                        <Badge variant="success" className="!rounded-lg !px-3 font-bold uppercase tracking-widest text-[10px]">Activo</Badge>
+                        <span className="text-xs font-bold text-text-muted flex items-center gap-1.5 ml-1">
+                            <Hash className="w-3.5 h-3.5" /> DNI {student.dni}
+                        </span>
+                    </div>
                 </div>
             </div>
+
+            {/* Info Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl bg-bg-hover/50 border border-border/50 group hover:border-primary/20 transition-colors">
+                    <div className="flex items-center gap-3 mb-1">
+                        <Calendar className="w-3.5 h-3.5 text-text-muted group-hover:text-primary transition-colors" />
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Nacimiento</p>
+                    </div>
+                    <p className="text-sm font-black text-text-primary pl-6">{student.birthDate || '—'}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-bg-hover/50 border border-border/50 group hover:border-primary/20 transition-colors">
+                    <div className="flex items-center gap-3 mb-1">
+                        <Phone className="w-3.5 h-3.5 text-text-muted group-hover:text-primary transition-colors" />
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Teléfono</p>
+                    </div>
+                    <p className="text-sm font-black text-text-primary pl-6">{student.phone || '—'}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-bg-hover/50 border border-border/50 col-span-1 sm:col-span-2 group hover:border-primary/20 transition-colors">
+                    <div className="flex items-center gap-3 mb-1">
+                        <Mail className="w-3.5 h-3.5 text-text-muted group-hover:text-primary transition-colors" />
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Email Tutor</p>
+                    </div>
+                    <p className="text-sm font-black text-text-primary pl-6 truncate">{student.tutorEmail || '—'}</p>
+                </div>
+            </div>
+
+            {/* Stats Dashboard */}
+            <Card className="!rounded-3xl border-none shadow-xl shadow-black/5 bg-gradient-to-br from-bg-card to-bg-hover overflow-hidden">
+                <CardHeader className="!border-none pb-0">
+                    <h4 className="text-xs font-black text-text-muted uppercase tracking-widest flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-secondary" /> Rendimiento General
+                    </h4>
+                </CardHeader>
+                <CardBody className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="relative pl-4 border-l-2 border-secondary/30">
+                        <p className="text-2xl font-black text-secondary leading-none">{attendance.percentage}%</p>
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Asistencia</p>
+                    </div>
+                    <div className="relative pl-4 border-l-2 border-primary/30">
+                        <p className="text-2xl font-black text-primary leading-none">{attendance.present}</p>
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Presentes</p>
+                    </div>
+                    <div className="relative pl-4 border-l-2 border-error/30">
+                        <p className="text-2xl font-black text-error leading-none">{attendance.absent}</p>
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Faltas</p>
+                    </div>
+                    <div className="relative pl-4 border-l-2 border-warning/30">
+                        <p className="text-2xl font-black text-warning leading-none">{attendance.late}</p>
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Retrasos</p>
+                    </div>
+                </CardBody>
+            </Card>
+
+            {/* Academic Detail */}
             <div>
-                <h4 className="text-sm font-semibold text-text-primary mb-3">Resumen de Asistencia</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="text-center p-3 rounded-lg bg-secondary/10">
-                        <p className="text-2xl font-bold text-secondary">{attendance.present}</p>
-                        <p className="text-xs text-text-secondary">Presentes</p>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-error/10">
-                        <p className="text-2xl font-bold text-error">{attendance.absent}</p>
-                        <p className="text-xs text-text-secondary">Ausentes</p>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-warning/10">
-                        <p className="text-2xl font-bold text-warning">{attendance.late}</p>
-                        <p className="text-xs text-text-secondary">Tardanzas</p>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-primary/10">
-                        <p className="text-2xl font-bold text-primary">{attendance.percentage}%</p>
-                        <p className="text-xs text-text-secondary">Asistencia</p>
-                    </div>
-                </div>
+                <Card className="!rounded-3xl border border-border/50 overflow-hidden shadow-sm">
+                    <CardHeader className="bg-bg-hover/30 !py-4">
+                        <h4 className="text-sm font-black text-text-primary tracking-tight flex items-center gap-2">
+                            <Info className="w-4 h-4 text-primary" /> Desglose por Materias
+                        </h4>
+                    </CardHeader>
+                    {course ? (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm border-separate border-spacing-0">
+                                <thead className="bg-bg-hover/10 text-[10px] font-black text-text-muted uppercase tracking-widest">
+                                    <tr>
+                                        <th className="px-6 py-3 border-b border-border/30">Materia</th>
+                                        <th className="px-6 py-3 border-b border-border/30 text-center">Promedio</th>
+                                        <th className="px-6 py-3 border-b border-border/30 text-right">Situación</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/20">
+                                    {course.subjects.map((subName, i) => {
+                                        const gradeStore = useGradeStore.getState()
+                                        const subObj = gradeStore.subjects.find(s => s.name === subName && s.year === course.year)
+                                        if (!subObj) {
+                                            return (
+                                                <tr key={i} className="hover:bg-bg-hover/20 transition-colors">
+                                                    <td className="px-6 py-4 font-bold text-text-secondary">{subName}</td>
+                                                    <td className="px-6 py-4 text-center text-text-muted font-black">—</td>
+                                                    <td className="px-6 py-4 text-right"><Badge variant="neutral" className="!rounded-lg text-[9px]">PENDIENTE</Badge></td>
+                                                </tr>
+                                            )
+                                        }
+                                        const finalGrade = gradeStore.calculateFinalGrade(student.id, subObj.id)
+                                        const approved = gradeStore.isApproved(student.id, subObj.id, passingGrade)
+
+                                        return (
+                                            <tr key={subObj.id} className="hover:bg-bg-hover/20 transition-colors group">
+                                                <td className="px-6 py-4 font-black text-text-primary group-hover:text-primary transition-colors">{subName}</td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <div className={`text-lg font-black tracking-tighter ${approved === true ? 'text-secondary' : approved === false ? 'text-error' : 'text-text-muted/40'}`}>
+                                                        {finalGrade !== null ? finalGrade.toFixed(1) : '——'}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {approved === true ? (
+                                                        <Badge variant="success" className="!rounded-lg !px-3 font-black text-[10px]">APROBADO</Badge>
+                                                    ) : approved === false ? (
+                                                        <Badge variant="error" className="!rounded-lg !px-3 font-black text-[10px]">INTENSIFICA</Badge>
+                                                    ) : (
+                                                        <Badge variant="neutral" className="!rounded-lg !px-3 font-black text-[10px] opacity-40">CURSANDO</Badge>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    ) : (
+                        <CardBody className="py-12 flex flex-col items-center justify-center bg-bg-card">
+                            <div className="w-16 h-16 rounded-3xl bg-bg-hover flex items-center justify-center mb-4">
+                                <AlertCircle className="w-8 h-8 text-text-muted opacity-20" />
+                            </div>
+                            <p className="text-sm text-text-muted font-bold tracking-tight">El alumno no está asignado a ningún curso</p>
+                        </CardBody>
+                    )}
+                </Card>
             </div>
         </div>
     )
@@ -230,74 +328,120 @@ export default function StudentsPage() {
     }
 
     return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-text-primary">Gestión de Alumnos</h1>
-                    <p className="text-sm text-text-secondary mt-1">{activeStudents.length} alumnos activos</p>
+        <div className="space-y-8 animate-fade-in relative">
+            {/* Background Glow Decorations */}
+            <div className="fixed top-40 left-10 w-[400px] h-[400px] bg-primary/5 blur-[100px] rounded-full -z-10 pointer-events-none" />
+            <div className="fixed bottom-10 right-10 w-[300px] h-[300px] bg-secondary/5 blur-[80px] rounded-full -z-10 pointer-events-none" />
+
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2 border-b border-border/10">
+                <div className="relative">
+                    <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1.5 h-12 bg-primary rounded-full hidden md:block" />
+                    <h1 className="text-4xl font-black text-text-primary tracking-tight">
+                        Gestión de <span className="text-primary">Alumnos</span>
+                    </h1>
+                    <div className="flex items-center gap-2 mt-2 text-sm text-text-secondary font-medium uppercase tracking-wider">
+                        <GraduationCap className="w-4 h-4 text-primary" />
+                        <span>Matrícula Ciclo 2026</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-border mx-1" />
+                        <span>{activeStudents.length} Activos</span>
+                    </div>
                 </div>
-                <div className="flex gap-3">
-                    <label>
+                <div className="flex gap-4">
+                    <label className="relative group">
                         <input type="file" accept=".csv" onChange={handleCSVImport} className="hidden" />
-                        <Button variant="outline" icon={Upload} onClick={() => { }} className="cursor-pointer" as="span">Importar CSV</Button>
+                        <Button
+                            variant="outline"
+                            icon={FileSpreadsheet}
+                            onClick={() => { }}
+                            className="shadow-lg hover:shadow-primary/5 border-border/50 transition-all"
+                            as="span"
+                        >
+                            Importar CSV
+                        </Button>
                     </label>
-                    <Button icon={Plus} onClick={() => { setEditing(null); setShowModal(true) }}>Nuevo Alumno</Button>
+                    <Button
+                        icon={UserPlus}
+                        onClick={() => { setEditing(null); setShowModal(true) }}
+                        className="shadow-xl shadow-primary/20 hover:scale-105 transition-transform"
+                    >
+                        Registrar Nuevo
+                    </Button>
                 </div>
             </div>
 
-            <div className="flex gap-4 items-center">
-                <SearchBar value={search} onChange={setSearch} placeholder="Buscar por nombre, apellido o DNI..." className="flex-1" />
-                <Select
-                    value={filterCourse} placeholder="Todos los cursos"
-                    options={courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}"` }))}
-                    onChange={(e) => { setFilterCourse(e.target.value); setPage(1) }}
-                    className="w-48"
-                />
+            {/* Advanced Filters */}
+            <div className="p-6 rounded-3xl bg-bg-card border border-border shadow-xl shadow-black/5 flex flex-wrap gap-6 items-end relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+
+                <div className="flex-1 min-w-[280px]">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1 mb-2 block">Búsqueda Inteligente</label>
+                    <SearchBar value={search} onChange={setSearch} placeholder="Nombre, apellido o DNI..." className="!bg-bg-hover/50 !border-transparent focus-within:!border-primary/30" />
+                </div>
+                <div className="w-64">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1 mb-2 block">Filtrar por Curso</label>
+                    <Select
+                        value={filterCourse} placeholder="Todos los cursos"
+                        options={courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}"` }))}
+                        onChange={(e) => { setFilterCourse(e.target.value); setPage(1) }}
+                        className="!bg-bg-hover/50 !border-transparent focus:!border-primary/30"
+                    />
+                </div>
             </div>
 
             {filtered.length === 0 ? (
-                <EmptyState icon={Search} title="No se encontraron alumnos" description={search ? 'Intentá con otros términos de búsqueda.' : 'Registrá tu primer alumno o importá desde CSV.'} />
+                <EmptyState icon={Users} title="Sin Coincidencias" description={search ? 'No encontramos ningún alumno que coincida con tu búsqueda.' : 'Todavía no hay alumnos registrados en este curso.'} />
             ) : (
-                <Card className="overflow-hidden">
+                <Card className="border-none shadow-xl shadow-black/5 overflow-hidden !rounded-3xl">
                     <div className="overflow-x-auto w-full pb-2">
-                        <table className="w-full text-left border-collapse min-w-[700px]">
+                        <table className="w-full text-left border-separate border-spacing-0">
                             <thead>
-                                <tr className="border-b border-border bg-bg-hover/50">
-                                    <th className="text-xs font-semibold text-text-muted uppercase tracking-wider px-5 py-3 whitespace-nowrap">Alumno</th>
-                                    <th className="text-xs font-semibold text-text-muted uppercase tracking-wider px-5 py-3 whitespace-nowrap">DNI</th>
-                                    <th className="text-xs font-semibold text-text-muted uppercase tracking-wider px-5 py-3 whitespace-nowrap">Curso</th>
-                                    <th className="text-xs font-semibold text-text-muted uppercase tracking-wider px-5 py-3 whitespace-nowrap">Contacto</th>
-                                    <th className="text-right text-xs font-semibold text-text-muted uppercase tracking-wider px-5 py-3 whitespace-nowrap">Acciones</th>
+                                <tr className="bg-bg-hover/30 text-[10px] text-text-muted font-bold uppercase tracking-widest">
+                                    <th className="px-6 py-4 border-b border-border/50">Alumno</th>
+                                    <th className="px-6 py-4 border-b border-border/50">DNI / Documento</th>
+                                    <th className="px-6 py-4 border-b border-border/50">Membresía Curso</th>
+                                    <th className="px-6 py-4 border-b border-border/50">Canal de Contacto</th>
+                                    <th className="px-6 py-4 border-b border-border/50 text-right">Acciones Directas</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-border/30">
                                 {paginated.map((student) => (
-                                    <tr key={student.id} className="border-b border-border-light hover:bg-bg-hover transition-colors">
-                                        <td className="px-5 py-3">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/70 to-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
+                                    <tr key={student.id} className="hover:bg-primary/5 transition-all group">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center text-white text-xs font-black shadow-lg shadow-primary/20 group-hover:scale-110 transition-transform">
                                                     {student.name[0]}{student.lastName[0]}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-medium text-text-primary">{student.lastName}, {student.name}</p>
+                                                    <p className="text-sm font-black text-text-primary tracking-tight group-hover:text-primary transition-colors">
+                                                        {student.lastName}, {student.name}
+                                                    </p>
+                                                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Estudiante Regular</p>
                                                 </div>
                                             </div>
                                         </td>
-                                        <td className="px-5 py-3 text-sm text-text-secondary">{student.dni}</td>
-                                        <td className="px-5 py-3">
-                                            <Badge variant="neutral">{getCourseLabel(student.courseId)}</Badge>
+                                        <td className="px-6 py-4 text-sm font-bold text-text-secondary/80 tracking-tight">{student.dni}</td>
+                                        <td className="px-6 py-4">
+                                            <Badge variant="primary" className="!rounded-lg !px-3 !py-1 font-black text-[9px] uppercase tracking-wider">
+                                                {getCourseLabel(student.courseId)}
+                                            </Badge>
                                         </td>
-                                        <td className="px-5 py-3 text-sm text-text-secondary">{student.tutorEmail || '—'}</td>
-                                        <td className="px-5 py-3">
-                                            <div className="flex items-center justify-end gap-1">
-                                                <button onClick={() => setShowProfile(student)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-bg-hover transition-colors cursor-pointer" title="Ver perfil">
-                                                    <Eye className="w-4 h-4 text-text-muted" />
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-col">
+                                                <p className="text-sm font-medium text-text-secondary truncate max-w-[180px]">{student.tutorEmail || 'Sin email'}</p>
+                                                <p className="text-[10px] text-text-muted font-bold">{student.phone || 'Sin teléfono'}</p>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button onClick={() => setShowProfile(student)} className="w-9 h-9 rounded-xl flex items-center justify-center bg-bg-card hover:bg-bg-hover text-text-muted hover:text-primary transition-all border border-border shadow-sm group/btn" title="Ver perfil">
+                                                    <Eye className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                                                 </button>
-                                                <button onClick={() => { setEditing(student); setShowModal(true) }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-bg-hover transition-colors cursor-pointer" title="Editar">
-                                                    <Edit2 className="w-4 h-4 text-text-muted" />
+                                                <button onClick={() => { setEditing(student); setShowModal(true) }} className="w-9 h-9 rounded-xl flex items-center justify-center bg-bg-card hover:bg-bg-hover text-text-muted hover:text-secondary transition-all border border-border shadow-sm group/btn" title="Editar">
+                                                    <Edit2 className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                                                 </button>
-                                                <button onClick={(e) => { e.stopPropagation(); setDeletingId(student.id); setShowConfirm(true) }} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-error/10 transition-colors cursor-pointer" title="Dar de baja">
-                                                    <Trash2 className="w-4 h-4 text-text-muted hover:text-error" />
+                                                <button onClick={(e) => { e.stopPropagation(); setDeletingId(student.id); setShowConfirm(true) }} className="w-9 h-9 rounded-xl flex items-center justify-center bg-bg-card hover:bg-error/10 text-text-muted hover:text-error transition-all border border-border shadow-sm group/btn" title="Dar de baja">
+                                                    <Trash2 className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                                                 </button>
                                             </div>
                                         </td>
@@ -307,17 +451,23 @@ export default function StudentsPage() {
                         </table>
                     </div>
                     {totalPages > 1 && (
-                        <div className="flex items-center justify-between px-5 py-3 border-t border-border">
-                            <p className="text-sm text-text-secondary">Mostrando {(page - 1) * perPage + 1}-{Math.min(page * perPage, filtered.length)} de {filtered.length}</p>
-                            <div className="flex gap-1">
-                                <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-bg-hover disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed">
-                                    <ChevronLeft className="w-4 h-4" />
+                        <div className="flex items-center justify-between px-6 py-4 bg-bg-hover/10 border-t border-border/50">
+                            <p className="text-xs font-bold text-text-muted uppercase tracking-widest">Página {page} de {totalPages}</p>
+                            <div className="flex gap-2">
+                                <button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1} className="w-9 h-9 rounded-xl flex items-center justify-center bg-bg-card hover:bg-bg-hover border border-border disabled:opacity-30 cursor-pointer shadow-sm transition-all active:scale-95">
+                                    <ChevronLeft className="w-5 h-5 text-text-primary" />
                                 </button>
                                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                                    <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded-lg text-sm font-medium cursor-pointer ${p === page ? 'bg-primary text-white' : 'hover:bg-bg-hover text-text-secondary'}`}>{p}</button>
+                                    <button
+                                        key={p}
+                                        onClick={() => setPage(p)}
+                                        className={`w-9 h-9 rounded-xl text-xs font-black transition-all border shadow-sm ${p === page ? 'bg-primary border-primary text-white scale-110 shadow-primary/30' : 'bg-bg-card border-border text-text-secondary hover:bg-bg-hover'}`}
+                                    >
+                                        {p}
+                                    </button>
                                 ))}
-                                <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-bg-hover disabled:opacity-40 cursor-pointer disabled:cursor-not-allowed">
-                                    <ChevronRight className="w-4 h-4" />
+                                <button onClick={() => setPage(Math.min(totalPages, page + 1))} disabled={page === totalPages} className="w-9 h-9 rounded-xl flex items-center justify-center bg-bg-card hover:bg-bg-hover border border-border disabled:opacity-30 cursor-pointer shadow-sm transition-all active:scale-95">
+                                    <ChevronRight className="w-5 h-5 text-text-primary" />
                                 </button>
                             </div>
                         </div>

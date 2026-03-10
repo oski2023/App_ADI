@@ -111,7 +111,11 @@ export default function SettingsPage() {
                                 <label className="block text-sm font-medium text-text-secondary mb-1">Nombre Mostrar</label>
                                 <Input
                                     value={localSettings.userName}
-                                    onChange={(e) => setLocalSettings({ ...localSettings, userName: e.target.value })}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const capitalized = val.charAt(0).toUpperCase() + val.slice(1);
+                                        setLocalSettings({ ...localSettings, userName: capitalized });
+                                    }}
                                     placeholder="Ej. Prof. García"
                                 />
                             </div>

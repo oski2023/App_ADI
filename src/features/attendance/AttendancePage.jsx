@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Check, X, Clock, CheckCheck, AlertTriangle } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { Check, X, Clock, CheckCheck, AlertTriangle, GraduationCap, CalendarDays, Users, UserCheck, UserX, UserMinus, ChevronRight, Info } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import Badge from '../../shared/components/Badge'
@@ -58,11 +58,16 @@ export default function AttendancePage() {
 
     const statusButton = (studentId, status, icon, activeColor, label) => {
         const isActive = dayRecord[studentId] === status
+        const colors = {
+            P: isActive ? 'bg-secondary text-white shadow-lg shadow-secondary/30 scale-110' : 'bg-bg-hover text-text-muted hover:bg-secondary/10 hover:text-secondary',
+            A: isActive ? 'bg-error text-white shadow-lg shadow-error/30 scale-110' : 'bg-bg-hover text-text-muted hover:bg-error/10 hover:text-error',
+            T: isActive ? 'bg-warning text-white shadow-lg shadow-warning/30 scale-110' : 'bg-bg-hover text-text-muted hover:bg-warning/10 hover:text-warning'
+        }
+
         return (
             <button
                 onClick={() => handleSetAttendance(studentId, status)}
-                className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200 cursor-pointer ${isActive ? activeColor : 'bg-bg-hover text-text-muted hover:bg-bg-active'
-                    }`}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 cursor-pointer ${colors[status]} border border-transparent`}
                 title={label}
             >
                 {icon}
@@ -70,69 +75,122 @@ export default function AttendancePage() {
         )
     }
 
+    const currentCourse = courses.find(c => c.id === selectedCourse)
+
     return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-text-primary">Registro de Asistencia</h1>
-                    <p className="text-sm text-text-secondary mt-1">Marcá la asistencia de tus alumnos</p>
+        <div className="space-y-8 animate-fade-in relative">
+            {/* Background Glow Decorations */}
+            <div className="fixed top-40 right-10 w-[400px] h-[400px] bg-primary/5 blur-[100px] rounded-full -z-10 pointer-events-none" />
+            <div className="fixed bottom-10 left-10 w-[300px] h-[300px] bg-secondary/5 blur-[80px] rounded-full -z-10 pointer-events-none" />
+
+            {/* Header Section */}
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-2 border-b border-border/10">
+                <div className="relative">
+                    <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1.5 h-12 bg-secondary rounded-full hidden md:block" />
+                    <h1 className="text-4xl font-black text-text-primary tracking-tight">
+                        Toma de <span className="text-secondary">Asistencia</span>
+                    </h1>
+                    <div className="flex items-center gap-2 mt-2 text-sm text-text-secondary font-medium uppercase tracking-wider">
+                        <UserCheck className="w-4 h-4 text-secondary" />
+                        <span>Registro Diario</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-border mx-1" />
+                        <span>{new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+                    </div>
                 </div>
                 {students.length > 0 && (
-                    <Button icon={CheckCheck} onClick={handleMarkAll} variant="secondary">Todos Presentes</Button>
+                    <Button
+                        icon={CheckCheck}
+                        onClick={handleMarkAll}
+                        variant="secondary"
+                        className="shadow-xl shadow-secondary/20 hover:scale-105 transition-transform"
+                    >
+                        Todos Presentes
+                    </Button>
                 )}
             </div>
 
             {/* Filters */}
-            <div className="flex gap-4 items-end">
-                <Select
-                    id="course" label="Curso" value={selectedCourse}
-                    options={courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}" — ${c.shift}` }))}
-                    onChange={(e) => setSelectedCourse(e.target.value)}
-                    className="w-64"
-                />
-                <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1.5">Fecha</label>
+            <div className="p-6 rounded-3xl bg-bg-card border border-border shadow-xl shadow-black/5 flex flex-wrap gap-6 items-end relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-secondary/5 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+
+                <div className="flex-1 min-w-[280px]">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1 mb-2 block">Seleccionar Curso</label>
+                    <Select
+                        id="course" label="" value={selectedCourse}
+                        options={courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}" — ${c.shift}` }))}
+                        onChange={(e) => setSelectedCourse(e.target.value)}
+                        className="!bg-bg-hover/50 !border-transparent focus:!border-secondary/30"
+                    />
+                </div>
+                <div className="w-48">
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest ml-1 mb-2 block">Fecha de Registro</label>
                     <input
                         type="date" value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="px-3.5 py-2.5 rounded-lg border border-border text-sm bg-bg-card text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        className="w-full px-4 py-3 rounded-2xl border border-transparent bg-bg-hover/50 text-text-primary outline-none focus:border-secondary/30 transition-all font-medium"
                     />
+                </div>
+                <div className="flex-none">
+                    <Badge variant="neutral" className="!rounded-xl !px-4 !py-3 !bg-bg-hover/50">
+                        {students.length} Alumnos
+                    </Badge>
                 </div>
             </div>
 
-            {/* Summary */}
+            {/* Summary Cards */}
             {students.length > 0 && (
-                <div className="grid grid-cols-4 gap-4">
-                    <div className="text-center p-3 rounded-xl bg-bg-card border border-border">
-                        <p className="text-2xl font-bold text-text-primary">{students.length}</p>
-                        <p className="text-xs text-text-secondary">Total</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-bg-card to-secondary/10 border border-white/10 shadow-sm">
+                        <div className="bg-bg-card/50 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-text-primary tracking-tight leading-none">{students.length}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                                <Users className="w-3.5 h-3.5 text-text-muted" />
+                                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Total Alumnos</p>
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-center p-3 rounded-xl bg-secondary/10 border border-secondary/20">
-                        <p className="text-2xl font-bold text-secondary">{presentCount}</p>
-                        <p className="text-xs text-text-secondary">Presentes</p>
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-secondary/20 to-secondary/5 border border-white/20 shadow-lg shadow-secondary/10">
+                        <div className="bg-bg-card/40 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-secondary tracking-tight leading-none">{presentCount}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                                <UserCheck className="w-3.5 h-3.5 text-secondary" />
+                                <p className="text-[10px] font-bold text-secondary uppercase tracking-widest">Presentes Today</p>
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-center p-3 rounded-xl bg-error/10 border border-error/20">
-                        <p className="text-2xl font-bold text-error">{absentCount}</p>
-                        <p className="text-xs text-text-secondary">Ausentes</p>
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-error/20 to-error/5 border border-white/20 shadow-lg shadow-error/10">
+                        <div className="bg-bg-card/40 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-error tracking-tight leading-none">{absentCount}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                                <UserX className="w-3.5 h-3.5 text-error" />
+                                <p className="text-[10px] font-bold text-error uppercase tracking-widest">Ausentes</p>
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-center p-3 rounded-xl bg-warning/10 border border-warning/20">
-                        <p className="text-2xl font-bold text-warning">{lateCount}</p>
-                        <p className="text-xs text-text-secondary">Tardanzas</p>
+                    <div className="p-1 rounded-3xl bg-gradient-to-br from-warning/20 to-warning/5 border border-white/20 shadow-lg shadow-warning/10">
+                        <div className="bg-bg-card/40 rounded-[22px] p-5">
+                            <p className="text-3xl font-black text-warning tracking-tight leading-none">{lateCount}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                                <UserMinus className="w-3.5 h-3.5 text-warning" />
+                                <p className="text-[10px] font-bold text-warning uppercase tracking-widest">Tardanzas</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
 
-            {/* Alerta de Paro Docente */}
+            {/* Strike Alert */}
             {isStrikeDay && (
-                <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <div className="bg-gradient-to-r from-purple-600/10 to-transparent border border-purple-500/20 rounded-3xl p-6 flex items-start gap-6 relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+                    <div className="w-14 h-14 rounded-2xl bg-purple-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/20">
+                        <AlertTriangle className="w-7 h-7" />
                     </div>
                     <div>
-                        <h3 className="text-sm font-bold text-purple-700 dark:text-purple-300">Día de Paro Docente</h3>
-                        <p className="text-sm text-purple-600/80 dark:text-purple-400/80 mt-0.5">
-                            Se ha registrado un evento de Paro en la Agenda para el día de hoy.
-                            La inasistencia no debería afectar el porcentaje global de los alumnos. Las alertas están deshabilitadas para esta fecha.
+                        <h3 className="text-lg font-black text-purple-600 dark:text-purple-400 tracking-tight">Día de Paro Docente Detectado</h3>
+                        <p className="text-sm text-text-secondary mt-1 leading-relaxed max-w-3xl">
+                            Se ha identificado un evento de <span className="font-bold text-purple-600 dark:text-purple-400">Paro / Huelga</span> en la Agenda Oficial para la fecha seleccionada.
+                            La inasistencia durante este periodo no computará negativamente para las alertas de umbral crítico.
                         </p>
                     </div>
                 </div>
@@ -140,46 +198,82 @@ export default function AttendancePage() {
 
             {/* Attendance List */}
             {!selectedCourse ? (
-                <EmptyState icon={Check} title="Seleccioná un curso" description="Elegí un curso para registrar la asistencia del día." />
+                <EmptyState icon={GraduationCap} title="Seleccionar Curso" description="Elige una división para comenzar el pase de lista de hoy." />
             ) : students.length === 0 ? (
-                <EmptyState icon={Check} title="Sin alumnos" description="Este curso no tiene alumnos registrados." />
+                <EmptyState icon={Users} title="Sin Alumnos" description="Este curso no tiene alumnos registrados en el sistema." />
             ) : (
-                <Card>
-                    <div className="divide-y divide-border-light">
+                <Card className="border-none shadow-xl shadow-black/5 overflow-hidden !rounded-3xl">
+                    <CardHeader
+                        className="!border-none pt-6 bg-gradient-to-r from-bg-card to-bg-hover/30"
+                        action={
+                            allMarked && (
+                                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary/10 text-secondary border border-secondary/20 animate-fade-in text-xs font-black uppercase tracking-widest">
+                                    <CheckCheck className="w-4 h-4" />
+                                    Carga Finalizada
+                                </div>
+                            )
+                        }
+                    >
+                        <h2 className="text-xl font-black text-text-primary tracking-tight">Pase de Lista</h2>
+                    </CardHeader>
+                    <div className="divide-y divide-border/30">
                         {students.map((student) => {
                             const summary = getStudentSummary(student.id)
                             const isAlert = summary.total > 0 && summary.percentage < (100 - threshold)
+                            const currentStatus = dayRecord[student.id]
+
                             return (
-                                <div key={student.id} className="flex items-center justify-between px-5 py-3 hover:bg-bg-hover transition-colors">
-                                    <div className="flex items-center gap-3 flex-1">
-                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/70 to-primary flex items-center justify-center text-white text-xs font-bold shrink-0">
-                                            {student.name[0]}{student.lastName[0]}
+                                <div key={student.id} className="flex items-center justify-between px-6 py-4 hover:bg-bg-hover/50 transition-all group">
+                                    <div className="flex items-center gap-5 flex-1 min-w-0">
+                                        <div className="relative">
+                                            <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center text-white text-sm font-black shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform`}>
+                                                {student.lastName[0]}{student.name[0]}
+                                            </div>
+                                            {currentStatus && (
+                                                <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-bg-card flex items-center justify-center ${currentStatus === 'P' ? 'bg-secondary' : currentStatus === 'A' ? 'bg-error' : 'bg-warning'
+                                                    }`}>
+                                                    {currentStatus === 'P' ? <Check className="w-3 h-3 text-white" /> : currentStatus === 'A' ? <X className="w-3 h-3 text-white" /> : <Clock className="w-3 h-3 text-white" />}
+                                                </div>
+                                            )}
                                         </div>
-                                        <div>
-                                            <p className="text-sm font-medium text-text-primary flex items-center gap-2">
-                                                {student.lastName}, {student.name}
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-3">
+                                                <p className="text-base font-black text-text-primary tracking-tight truncate group-hover:text-primary transition-colors">
+                                                    {student.lastName}, {student.name}
+                                                </p>
                                                 {isAlert && (
-                                                    <span className="text-warning" title={`${summary.percentage}% asistencia`}>
-                                                        <AlertTriangle className="w-3.5 h-3.5" />
-                                                    </span>
+                                                    <Badge variant="warning" className="!px-1.5 !py-0.5 animate-pulse">
+                                                        <AlertTriangle className="w-3 h-3" />
+                                                    </Badge>
                                                 )}
-                                            </p>
-                                            <p className="text-xs text-text-muted">{summary.percentage}% asistencia · {summary.absent} faltas</p>
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-1 text-xs font-bold text-text-muted">
+                                                <span className={`${isAlert ? 'text-warning' : 'text-secondary'} flex items-center gap-1`}>
+                                                    <Info className="w-3 h-3" /> {summary.percentage}% Asistencia
+                                                </span>
+                                                <span className="w-1 h-1 rounded-full bg-border" />
+                                                <span>{summary.absent} Faltas acumuladas</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        {statusButton(student.id, 'P', <Check className="w-4 h-4" />, 'bg-secondary text-white shadow-sm', 'Presente')}
-                                        {statusButton(student.id, 'A', <X className="w-4 h-4" />, 'bg-error text-white shadow-sm', 'Ausente')}
-                                        {statusButton(student.id, 'T', <Clock className="w-4 h-4" />, 'bg-warning text-white shadow-sm', 'Tarde')}
+                                    <div className="flex items-center gap-3">
+                                        {statusButton(student.id, 'P', <Check className="w-5 h-5" />, 'bg-secondary text-white shadow-lg shadow-secondary/30 scale-110', 'Presente')}
+                                        {statusButton(student.id, 'A', <X className="w-5 h-5" />, 'bg-error text-white shadow-lg shadow-error/30 scale-110', 'Ausente')}
+                                        {statusButton(student.id, 'T', <Clock className="w-5 h-5" />, 'bg-warning text-white shadow-lg shadow-warning/30 scale-110', 'Tarde')}
                                     </div>
                                 </div>
                             )
                         })}
                     </div>
                     {allMarked && (
-                        <div className="px-5 py-3 bg-secondary/5 border-t border-secondary/20 flex items-center gap-2">
-                            <CheckCheck className="w-4 h-4 text-secondary" />
-                            <span className="text-sm text-secondary font-medium">Asistencia completa — {presentCount}P · {absentCount}A · {lateCount}T</span>
+                        <div className="px-6 py-4 bg-gradient-to-r from-secondary/10 to-transparent border-t border-secondary/20 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-secondary text-white flex items-center justify-center shrink-0">
+                                <CheckCheck className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-black text-secondary uppercase tracking-wider">Reporte de Asistencia Generado</p>
+                                <p className="text-xs text-text-secondary font-medium">Sincronizado correctamente con la base de datos central de ADI.</p>
+                            </div>
                         </div>
                     )}
                 </Card>

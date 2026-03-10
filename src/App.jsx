@@ -11,9 +11,7 @@ import CalendarPage from './features/calendar/CalendarPage'
 import ReportsPage from './features/reports/ReportsPage'
 import SettingsPage from './features/settings/SettingsPage'
 
-import { Toaster } from 'react-hot-toast'
-
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
 import useSettingsStore from './core/stores/useSettingsStore'
 import useSyncStore from './infrastructure/google/syncManager'
 import useStudentStore from './core/stores/useStudentStore'
@@ -21,9 +19,25 @@ import useAttendanceStore from './core/stores/useAttendanceStore'
 import useGradeStore from './core/stores/useGradeStore'
 import useTopicBookStore from './core/stores/useTopicBookStore'
 import useCalendarStore from './core/stores/useCalendarStore'
+import { useRegisterSW } from 'virtual:pwa-register/react'
+import { Toaster } from 'react-hot-toast'
 
 export default function App() {
     const initSync = useSyncStore((s) => s.init)
+
+    // Register PWA Service Worker
+    const {
+        offlineReady: [offlineReady, setOfflineReady],
+        needRefresh: [needRefresh, setNeedRefresh],
+        updateServiceWorker,
+    } = useRegisterSW({
+        onRegistered(r) {
+            console.log('SW Registered:', r)
+        },
+        onRegisterError(error) {
+            console.error('SW registration error', error)
+        },
+    })
 
     useEffect(() => {
         // Inicializar SDKs, Tema y verificar Auth
@@ -80,6 +94,41 @@ export default function App() {
                 </Route>
             </Routes>
             <Toaster position="bottom-right" toastOptions={{ className: 'text-sm font-medium rounded-lg shadow-lg' }} />
+
+            {/* PWA Update Notification */}
+            {(offlineReady || needRefresh) && (
+                <div className="fixed bottom-4 left-4 z-[100] animate-slide-in-up">
+                    <div className="bg-bg-card border border-primary/20 p-4 rounded-2xl shadow-2xl flex items-center gap-4 max-w-sm">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                            <Clock className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-sm font-bold text-text-primary">
+                                {offlineReady ? 'App lista para uso offline' : 'Nueva versión disponible'}
+                            </p>
+                            <p className="text-xs text-text-secondary mt-0.5">
+                                {offlineReady ? 'Podés usar ADI sin conexión' : 'Actualizá para recibir las últimas mejoras'}
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                            {needRefresh && (
+                                <button
+                                    onClick={() => updateServiceWorker(true)}
+                                    className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary-dark transition-colors"
+                                >
+                                    Actualizar
+                                </button>
+                            )}
+                            <button
+                                onClick={() => { setOfflineReady(false); setNeedRefresh(false) }}
+                                className="px-3 py-1.5 bg-bg-hover text-text-secondary text-xs font-medium rounded-lg hover:bg-bg-hover/80 transition-colors"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </HashRouter>
     )
 }
