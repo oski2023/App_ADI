@@ -9,7 +9,8 @@ import useStudentStore from '../../core/stores/useStudentStore'
 import useCourseStore from '../../core/stores/useCourseStore'
 import useAttendanceStore from '../../core/stores/useAttendanceStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
-import { ATTENDANCE_LABELS } from '../../core/constants'
+import useCalendarStore from '../../core/stores/useCalendarStore'
+import { EVENT_TYPES } from '../../core/constants'
 
 export default function AttendancePage() {
     const courses = useCourseStore((s) => s.courses)
@@ -18,9 +19,12 @@ export default function AttendancePage() {
     const setAttendance = useAttendanceStore((s) => s.setAttendance)
     const setAllPresent = useAttendanceStore((s) => s.setAllPresent)
     const threshold = useSettingsStore((s) => s.settings.absenceThreshold)
+    const calendarEvents = useCalendarStore((s) => s.events)
 
     const [selectedCourse, setSelectedCourse] = useState(courses[0]?.id || '')
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+
+    const isStrikeDay = calendarEvents.some((e) => e.date === selectedDate && e.type === EVENT_TYPES.STRIKE)
 
     const students = selectedCourse ? allStudents.filter((s) => s.courseId === selectedCourse && s.status === 'active') : []
     const dayKey = `${selectedDate}_${selectedCourse}`
@@ -114,6 +118,22 @@ export default function AttendancePage() {
                     <div className="text-center p-3 rounded-xl bg-warning/10 border border-warning/20">
                         <p className="text-2xl font-bold text-warning">{lateCount}</p>
                         <p className="text-xs text-text-secondary">Tardanzas</p>
+                    </div>
+                </div>
+            )}
+
+            {/* Alerta de Paro Docente */}
+            {isStrikeDay && (
+                <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-bold text-purple-700 dark:text-purple-300">Día de Paro Docente</h3>
+                        <p className="text-sm text-purple-600/80 dark:text-purple-400/80 mt-0.5">
+                            Se ha registrado un evento de Paro en la Agenda para el día de hoy.
+                            La inasistencia no debería afectar el porcentaje global de los alumnos. Las alertas están deshabilitadas para esta fecha.
+                        </p>
                     </div>
                 </div>
             )}

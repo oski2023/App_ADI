@@ -108,18 +108,21 @@ export default function DashboardPage() {
     })
 
     // 2. Alerta de registros faltantes
-    const todayKeySuffix = todayStr
-    const recordedCourses = new Set(Object.keys(attendanceRecords).filter(k => k.startsWith(todayStr)).map(k => k.split('_')[1]))
-    courses.forEach(c => {
-        if (!recordedCourses.has(c.id)) {
-            alerts.push({
-                type: 'error',
-                title: `Asistencia pendiente — ${c.year} "${c.division}"`,
-                desc: `Aún no se ha registrado la asistencia del día de hoy para este curso`,
-                icon: ClipboardCheck
-            })
-        }
-    })
+    const isStrikeDay = events.some((e) => e.date === todayStr && e.type === 'paro');
+    if (!isStrikeDay) {
+        const todayKeySuffix = todayStr
+        const recordedCourses = new Set(Object.keys(attendanceRecords).filter(k => k.startsWith(todayStr)).map(k => k.split('_')[1]))
+        courses.forEach(c => {
+            if (!recordedCourses.has(c.id)) {
+                alerts.push({
+                    type: 'error',
+                    title: `Asistencia pendiente — ${c.year} "${c.division}"`,
+                    desc: `Aún no se ha registrado la asistencia del día de hoy para este curso`,
+                    icon: ClipboardCheck
+                })
+            }
+        })
+    }
 
     // 3. Próximo evento
     if (upcomingEvents.length > 0) {

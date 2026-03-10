@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import useAuthStore from '../../core/stores/useAuthStore'
+import useSettingsStore from '../../core/stores/useSettingsStore'
 import { useSyncStore, SYNC_STATUS } from '../../infrastructure/google/syncManager'
 
 const navItems = [
@@ -27,6 +28,7 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClo
     const syncStatus = useSyncStore((s) => s.status)
     const online = useSyncStore((s) => s.online)
     const lastSync = useSyncStore((s) => s.lastSync)
+    const googleLinked = useSettingsStore((s) => s.googleLinked)
 
     const isExpanded = !collapsed || isMobileOpen
 
@@ -35,10 +37,18 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClo
         [SYNC_STATUS.SYNCING]: { color: 'bg-amber-400 animate-pulse', label: 'Sincronizando...' },
         [SYNC_STATUS.ERROR]: { color: 'bg-red-500', label: 'Error de conexión' },
         [SYNC_STATUS.OFFLINE]: { color: 'bg-gray-400', label: 'Modo Offline' },
+        unlinked: { color: 'bg-gray-400', label: 'Desconectado' },
         default: { color: 'bg-emerald-500', label: lastSync ? 'Sincronizado' : 'Conectado' }
     }
 
-    const currentStatus = !online ? statusConfig[SYNC_STATUS.OFFLINE] : (statusConfig[syncStatus] || statusConfig.default)
+    let currentStatus
+    if (!googleLinked) {
+        currentStatus = statusConfig.unlinked
+    } else if (!online) {
+        currentStatus = statusConfig[SYNC_STATUS.OFFLINE]
+    } else {
+        currentStatus = statusConfig[syncStatus] || statusConfig.default
+    }
 
     return (
         <>

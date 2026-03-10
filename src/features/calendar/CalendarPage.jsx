@@ -8,7 +8,7 @@ import Badge from '../../shared/components/Badge'
 import Tabs from '../../shared/components/Tabs'
 import { Input, Select, Textarea } from '../../shared/components/Input'
 import useCalendarStore from '../../core/stores/useCalendarStore'
-import { MONTHS_ES, DAYS_ES, EVENT_COLORS, EVENT_TYPES } from '../../core/constants'
+import { MONTHS_ES, DAYS_ES, EVENT_COLORS, EVENT_TYPES, NATIONAL_HOLIDAYS } from '../../core/constants'
 import toast from 'react-hot-toast'
 
 import ConfirmModal from '../../shared/components/ConfirmModal'
@@ -23,10 +23,11 @@ function EventForm({ event, onSave, onCancel }) {
             <Select
                 id="eventType" label="Tipo de Evento" value={form.type}
                 options={[
-                    { value: 'feriado', label: '🔴 Feriado' },
+                    { value: 'feriado', label: '🔴 Feriado (Manual)' },
                     { value: 'plenaria', label: '🔵 Reunión de Plenaria' },
                     { value: 'padres', label: '🟢 Reunión de Padres' },
                     { value: 'examen', label: '🟠 Examen' },
+                    { value: 'paro', label: '🟣 Paro Docente' },
                     { value: 'otro', label: '⚪ Otro' },
                 ]}
                 onChange={(e) => setForm({ ...form, type: e.target.value })}
@@ -57,6 +58,18 @@ export default function CalendarPage() {
     const [selectedDate, setSelectedDate] = useState(null)
     const eventsRef = useRef(null)
 
+    // Append static holidays to dynamic events
+    const allEvents = [
+        ...events,
+        ...NATIONAL_HOLIDAYS.map((h, i) => ({
+            id: `holiday-${h.date}-${i}`,
+            title: h.title,
+            date: h.date,
+            type: EVENT_TYPES.HOLIDAY,
+            isStatic: true
+        }))
+    ]
+
     const handleDateClick = (dateStr) => {
         setSelectedDate(dateStr)
         if (window.innerWidth < 1024 && eventsRef.current) {
@@ -67,7 +80,7 @@ export default function CalendarPage() {
     const year = currentDate.getFullYear()
     const month = currentDate.getMonth()
     const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`
-    const monthEvents = events.filter((e) => e.date.startsWith(monthPrefix))
+    const monthEvents = allEvents.filter((e) => e.date.startsWith(monthPrefix))
 
     // Calendar grid
     const firstDay = new Date(year, month, 1).getDay()
@@ -102,7 +115,7 @@ export default function CalendarPage() {
         }
     }
 
-    const dayEvents = selectedDate ? events.filter((e) => e.date === selectedDate) : []
+    const dayEvents = selectedDate ? allEvents.filter((e) => e.date === selectedDate) : []
 
     // Lógica para vista semanal
     const getWeekDays = () => {
@@ -195,7 +208,7 @@ export default function CalendarPage() {
                             ) : (
                                 weekDays.map((date, i) => {
                                     const dateStr = date.toISOString().split('T')[0]
-                                    const dayEvts = events.filter((e) => e.date === dateStr)
+                                    const dayEvts = allEvents.filter((e) => e.date === dateStr)
                                     const isSelected = dateStr === selectedDate
                                     const isTdy = dateStr === new Date().toISOString().split('T')[0]
 
@@ -204,8 +217,8 @@ export default function CalendarPage() {
                                             key={i}
                                             onClick={() => handleDateClick(dateStr)}
                                             className={`relative aspect-square p-1 rounded-xl text-sm transition-all duration-200 cursor-pointer flex flex-col items-center h-32 ${isSelected ? 'bg-primary text-white shadow-md' :
-                                                    isTdy ? 'bg-primary/10 text-primary font-bold' :
-                                                        'text-text-primary hover:bg-bg-hover'
+                                                isTdy ? 'bg-primary/10 text-primary font-bold' :
+                                                    'text-text-primary hover:bg-bg-hover'
                                                 }`}
                                         >
                                             <span className="text-sm font-medium">{date.getDate()}</span>
@@ -234,7 +247,7 @@ export default function CalendarPage() {
                         </h3>
                     </div>
                     <CardBody className="!p-3 space-y-2 max-h-[500px] overflow-y-auto">
-                        {(selectedDate ? dayEvents : events.filter((e) => e.date >= new Date().toISOString().split('T')[0]).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8)).map((event) => (
+                        {(selectedDate ? dayEvents : allEvents.filter((e) => e.date >= new Date().toISOString().split('T')[0]).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 8)).map((event) => (
                             <div key={event.id} className="p-3 rounded-xl hover:bg-bg-hover transition-colors group">
                                 <div className="flex items-start justify-between">
                                     <div className="flex items-start gap-3">
@@ -248,14 +261,16 @@ export default function CalendarPage() {
                                             {event.place && <p className="text-xs text-text-muted mt-0.5">📍 {event.place}</p>}
                                         </div>
                                     </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => { setEditing(event); setShowModal(true) }} className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-bg-active cursor-pointer">
-                                            <Edit2 className="w-3.5 h-3.5 text-text-muted" />
-                                        </button>
-                                        <button onClick={(e) => { e.stopPropagation(); setDeletingId(event.id); setShowConfirm(true) }} className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-error/10 cursor-pointer">
-                                            <Trash2 className="w-3.5 h-3.5 text-text-muted hover:text-error" />
-                                        </button>
-                                    </div>
+                                    {!event.isStatic && (
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => { setEditing(event); setShowModal(true) }} className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-bg-active cursor-pointer">
+                                                <Edit2 className="w-3.5 h-3.5 text-text-muted" />
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); setDeletingId(event.id); setShowConfirm(true) }} className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-error/10 cursor-pointer">
+                                                <Trash2 className="w-3.5 h-3.5 text-text-muted hover:text-error" />
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}

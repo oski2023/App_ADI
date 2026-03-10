@@ -11,17 +11,19 @@ import useGradeStore from '../../core/stores/useGradeStore'
 import useCourseStore from '../../core/stores/useCourseStore'
 import useStudentStore from '../../core/stores/useStudentStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
+import { toTitleCase } from '../../utils/stringUtils'
+import toast from 'react-hot-toast'
 
 export default function GradesPage() {
     const { courses, addSubjectToCourse } = useCourseStore(useShallow((s) => ({ courses: s.courses, addSubjectToCourse: s.addSubjectToCourse })))
-    const { subjects, setGrade, getGrades, calculateFinalGrade, isApproved, addSubject, deleteSubject } = useGradeStore(useShallow((s) => ({ subjects: s.subjects, setGrade: s.setGrade, getGrades: s.getGrades, calculateFinalGrade: s.calculateFinalGrade, isApproved: s.isApproved, addSubject: s.addSubject, deleteSubject: s.deleteSubject })))
+    const { subjects, grades, setGrade, getGrades, calculateFinalGrade, isApproved, addSubject, deleteSubject } = useGradeStore(useShallow((s) => ({ subjects: s.subjects, grades: s.grades, setGrade: s.setGrade, getGrades: s.getGrades, calculateFinalGrade: s.calculateFinalGrade, isApproved: s.isApproved, addSubject: s.addSubject, deleteSubject: s.deleteSubject })))
     const allStudents = useStudentStore((s) => s.students)
     const passingGrade = useSettingsStore((s) => s.settings.passingGrade)
 
     const [selectedCourse, setSelectedCourse] = useState(courses[0]?.id || '')
     const [selectedSubject, setSelectedSubject] = useState('')
     const [showSubjectModal, setShowSubjectModal] = useState(false)
-    const [newSubject, setNewSubject] = useState({ name: '', year: '', section: '', weights: [25, 25, 25, 25] })
+    const [newSubject, setNewSubject] = useState({ name: '', courseId: '', weights: [25, 25, 25, 25] })
 
     const normalize = (s) => s ? s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim() : '';
 
@@ -43,40 +45,76 @@ export default function GradesPage() {
         ? courseSubjects.find(s => s.id === selectedSubject)
         : subjects.find((s) => s.id === selectedSubject)
 
-    const handleGradeChange = (studentId, index, value) => {
-        if (!selectedSubject) return
+    const handleSubjectSelection = (subjectId) => {
+        if (!subjectId) {
+            setSelectedSubject('')
+            return
+        }
 
-        let targetId = selectedSubject
-
-        // If it's a temp subject, create it in the store before saving the grade
-        if (selectedSubject.startsWith('temp_')) {
-            const tempSub = courseSubjects.find(s => s.id === selectedSubject)
+        if (subjectId.startsWith('temp_')) {
+            const tempSub = courseSubjects.find(s => s.id === subjectId)
             const newId = addSubject({
                 name: tempSub.name,
                 year: course.year,
                 section: course.division,
                 weights: tempSub.weights
             })
-            targetId = newId
             setSelectedSubject(newId)
+        } else {
+            setSelectedSubject(subjectId)
         }
+    }
 
-        const num = parseFloat(value)
-        if (value === '' || (!isNaN(num) && num >= 0 && num <= 10)) {
-            setGrade(studentId, targetId, index, value === '' ? null : num)
+    const handleGradeChange = (studentId, index, value) => {
+        if (!selectedSubject || selectedSubject.startsWith('temp_')) return
+
+        const targetId = selectedSubject
+
+        if (value === '') {
+            setGrade(studentId, targetId, index, null)
+        } else {
+            const num = parseFloat(value)
+            if (!isNaN(num) && num >= 0 && num <= 10) {
+                setGrade(studentId, targetId, index, value)
+            }
         }
     }
 
     const handleAddSubject = () => {
-        const name = newSubject.name.trim()
-        if (!name) return
-        const newId = addSubject({ ...newSubject, name })
-        if (selectedCourse) {
-            addSubjectToCourse(selectedCourse, name)
+        let name = newSubject.name.trim()
+        if (!name || !newSubject.courseId) return
+
+        name = toTitleCase(name)
+
+        const targetCourse = courses.find(c => c.id === newSubject.courseId)
+        if (!targetCourse) return
+
+        // Validación de duplicado
+        if (targetCourse.subjects.some(sub => normalize(sub) === normalize(name))) {
+            toast.error(`Ya existe una materia llamada "${name}" en este curso.`)
+            return
+        }
+
+        const newId = addSubject({
+            ...newSubject,
+            name,
+            year: targetCourse.year,
+            section: targetCourse.division
+        })
+
+        addSubjectToCourse(targetCourse.id, name)
+
+        if (selectedCourse === targetCourse.id) {
             setSelectedSubject(newId)
         }
+
         setShowSubjectModal(false)
-        setNewSubject({ name: '', year: course?.year || '', section: course?.division || '', weights: [25, 25, 25, 25] })
+        setNewSubject({ name: '', courseId: '', weights: [25, 25, 25, 25] })
+    }
+
+    const openCreateModal = () => {
+        setNewSubject({ name: '', courseId: selectedCourse || '', weights: [25, 25, 25, 25] })
+        setShowSubjectModal(true)
     }
 
     return (
@@ -86,7 +124,7 @@ export default function GradesPage() {
                     <h1 className="text-2xl font-bold text-text-primary">Materias y Notas</h1>
                     <p className="text-sm text-text-secondary mt-1">Cargá y gestioná las notas de tus alumnos</p>
                 </div>
-                <Button icon={Plus} variant="outline" onClick={() => setShowSubjectModal(true)}>Nueva Materia</Button>
+                <Button icon={Plus} variant="outline" onClick={openCreateModal}>Nueva Materia</Button>
             </div>
 
             <div className="flex gap-4 items-end">
@@ -99,7 +137,7 @@ export default function GradesPage() {
                 <Select
                     id="subject" label="Materia" value={selectedSubject}
                     options={courseSubjects.map((s) => ({ value: s.id, label: s.name }))}
-                    onChange={(e) => setSelectedSubject(e.target.value)}
+                    onChange={(e) => handleSubjectSelection(e.target.value)}
                     placeholder="Seleccionar materia..."
                     className="w-64"
                 />
@@ -176,14 +214,19 @@ export default function GradesPage() {
 
             <Modal isOpen={showSubjectModal} onClose={() => setShowSubjectModal(false)} title="Nueva Materia">
                 <div className="space-y-4">
-                    <Input id="subjectName" label="Nombre de la Materia" value={newSubject.name} onChange={(e) => setNewSubject({ ...newSubject, name: e.target.value })} placeholder="Ej: Matemática" />
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input id="subjectYear" label="Año" value={newSubject.year} onChange={(e) => setNewSubject({ ...newSubject, year: e.target.value })} placeholder="Ej: 3°" />
-                        <Input id="subjectSection" label="Sección" value={newSubject.section} onChange={(e) => setNewSubject({ ...newSubject, section: e.target.value })} placeholder="Ej: A" />
-                    </div>
+                    <Input id="subjectName" label="Nombre de la Materia" value={newSubject.name} onChange={(e) => setNewSubject({ ...newSubject, name: toTitleCase(e.target.value) })} placeholder="Ej: Matemática" />
+                    <Select
+                        id="targetCourse"
+                        label="Curso Base"
+                        value={newSubject.courseId}
+                        options={[{ value: '', label: 'Seleccionar curso...' }, ...courses.map((c) => ({ value: c.id, label: `${c.year} "${c.division}" — ${c.shift}` }))]}
+                        onChange={(e) => setNewSubject({ ...newSubject, courseId: e.target.value })}
+                    />
                     <div className="flex justify-end gap-3 pt-2">
                         <Button variant="outline" onClick={() => setShowSubjectModal(false)}>Cancelar</Button>
-                        <Button onClick={handleAddSubject}>Crear Materia</Button>
+                        <Button onClick={handleAddSubject} disabled={!newSubject.name || !newSubject.courseId}>
+                            Crear Materia
+                        </Button>
                     </div>
                 </div>
             </Modal>

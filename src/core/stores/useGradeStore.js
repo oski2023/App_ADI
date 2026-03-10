@@ -49,10 +49,13 @@ const useGradeStore = create(
                 let totalWeight = 0
 
                 grades.forEach((grade, i) => {
-                    if (grade !== null && grade !== undefined) {
-                        const weight = weights[i] || (100 / weights.length)
-                        weightedSum += grade * weight
-                        totalWeight += weight
+                    if (grade !== null && grade !== undefined && grade !== '') {
+                        const num = parseFloat(grade)
+                        if (!isNaN(num)) {
+                            const weight = weights[i] || (100 / weights.length)
+                            weightedSum += num * weight
+                            totalWeight += weight
+                        }
                     }
                 })
 

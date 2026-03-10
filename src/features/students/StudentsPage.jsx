@@ -14,6 +14,7 @@ import useAttendanceStore from '../../core/stores/useAttendanceStore'
 import toast from 'react-hot-toast'
 
 import ConfirmModal from '../../shared/components/ConfirmModal'
+import { formatName, formatDNI, formatPhone } from '../../utils/stringUtils'
 
 function StudentForm({ student, courses, onSave, onCancel }) {
     const [form, setForm] = useState(student || {
@@ -26,6 +27,7 @@ function StudentForm({ student, courses, onSave, onCancel }) {
         if (!form.name.trim()) errs.name = 'El nombre es obligatorio'
         if (!form.lastName.trim()) errs.lastName = 'El apellido es obligatorio'
         if (!form.dni.trim()) errs.dni = 'El DNI es obligatorio'
+        else if (form.dni.length !== 8) errs.dni = 'El DNI debe tener 8 dígitos'
         if (!form.courseId) errs.courseId = 'Seleccione un curso'
         return errs
     }
@@ -40,16 +42,16 @@ function StudentForm({ student, courses, onSave, onCancel }) {
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input id="name" label="Nombre" value={form.name} error={errors.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre del alumno" />
-                <Input id="lastName" label="Apellido" value={form.lastName} error={errors.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder="Apellido del alumno" />
+                <Input id="name" label="Nombre" value={form.name} error={errors.name} onChange={(e) => setForm({ ...form, name: formatName(e.target.value) })} placeholder="Nombre del alumno" />
+                <Input id="lastName" label="Apellido" value={form.lastName} error={errors.lastName} onChange={(e) => setForm({ ...form, lastName: formatName(e.target.value) })} placeholder="Apellido del alumno" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input id="dni" label="DNI / ID" value={form.dni} error={errors.dni} onChange={(e) => setForm({ ...form, dni: e.target.value })} placeholder="Nro. de documento" />
+                <Input id="dni" label="DNI / ID" value={form.dni} error={errors.dni} onChange={(e) => setForm({ ...form, dni: formatDNI(e.target.value) })} placeholder="Nro. de documento" />
                 <Input id="birthDate" type="date" label="Fecha de Nacimiento" value={form.birthDate} onChange={(e) => setForm({ ...form, birthDate: e.target.value })} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Input id="phone" label="Teléfono de Contacto" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Ej: 11-5555-0000" />
-                <Input id="tutorEmail" label="Email del Tutor" type="email" value={form.tutorEmail} onChange={(e) => setForm({ ...form, tutorEmail: e.target.value })} placeholder="tutor@email.com" />
+                <Input id="phone" label="Teléfono de Contacto" value={form.phone} onChange={(e) => setForm({ ...form, phone: formatPhone(e.target.value) })} placeholder="Ej: 011-15-5588-6248" />
+                <Input id="tutorEmail" label="Email del Tutor" type="email" value={form.tutorEmail} onChange={(e) => setForm({ ...form, tutorEmail: e.target.value.toLowerCase() })} placeholder="tutor@email.com" />
             </div>
             <Select
                 id="courseId" label="Curso" value={form.courseId} error={errors.courseId} placeholder="Seleccionar curso..."
