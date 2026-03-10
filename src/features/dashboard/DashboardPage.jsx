@@ -1,6 +1,6 @@
 import {
     Users, ClipboardCheck, BookOpen, CalendarDays, AlertTriangle,
-    TrendingUp, Clock, ChevronRight, Plus, Bell, BarChart3, X, Check, Info
+    TrendingUp, Clock, ChevronRight, Plus, Bell, BarChart3, X, Check, Info, ShieldCheck
 } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../../shared/components/Card'
 import Badge from '../../shared/components/Badge'
