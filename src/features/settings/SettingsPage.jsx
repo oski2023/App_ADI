@@ -13,7 +13,7 @@ import { createSpreadsheet } from '../../infrastructure/google/sheetsService'
 import useSyncStore from '../../infrastructure/google/syncManager'
 
 export default function SettingsPage() {
-    const { settings, updateSettings, googleLinked, setGoogleLinked, darkMode, toggleDarkMode } = useSettingsStore(useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings, googleLinked: s.googleLinked, setGoogleLinked: s.setGoogleLinked, darkMode: s.darkMode, toggleDarkMode: s.toggleDarkMode })))
+        const { settings, updateSettings, googleLinked, setGoogleLinked, spreadsheetUrl, darkMode, toggleDarkMode } = useSettingsStore(useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings, googleLinked: s.googleLinked, setGoogleLinked: s.setGoogleLinked, spreadsheetUrl: s.spreadsheetUrl, darkMode: s.darkMode, toggleDarkMode: s.toggleDarkMode })))
     const { user, setUser } = useAuthStore(useShallow((s) => ({ user: s.user, setUser: s.setUser })))
 
     const [localSettings, setLocalSettings] = useState({
@@ -230,7 +230,7 @@ export default function SettingsPage() {
                             <div className="flex gap-2">
                                 <Button
                                     variant="primary"
-                                    onClick={() => window.open(localSettings.spreadsheetUrl, '_blank')}
+                                    onClick={() => window.open(spreadsheetUrl, '_blank')}
                                     className="flex-1 justify-center bg-success hover:bg-success/90 border-0"
                                 >
                                     Ver en Drive
