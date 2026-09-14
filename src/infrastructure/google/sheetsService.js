@@ -6,6 +6,70 @@ import { SHEET_NAMES, isGoogleConfigured } from './googleConfig'
 
 let spreadsheetId = null
 
+// Encabezados por hoja (usado al crear hojas nuevas o completar las faltantes en una hoja existente)
+const HEADERS_MAP = {
+    [SHEET_NAMES.ALUMNOS]: ['ID', 'Nombre', 'Apellido', 'DNI', 'Fecha Nacimiento', 'Teléfono', 'Email Tutor', 'ID Curso', 'Estado'],
+    [SHEET_NAMES.ASISTENCIA]: ['Fecha', 'ID Alumno', 'Estado', 'ID Curso'],
+    [SHEET_NAMES.NOTAS]: ['ID Alumno', 'Materia', 'Nota 1', 'Nota 2', 'Nota 3', 'Nota 4', 'Nota 5'],
+    [SHEET_NAMES.LIBRO_TEMAS]: ['Fecha', 'ID Curso', 'Materia', 'Eje/Tema', 'Actividades', 'Tarea'],
+    [SHEET_NAMES.AGENDA]: ['ID Evento', 'Tipo', 'Título', 'Fecha', 'Hora', 'Lugar', 'Notas', 'Alumnos Involucrados']
+}
+
+// Arma las peticiones de formato (encabezados, bandas, filtro, fila congelada) para una hoja
+function buildFormattingRequests(sheetId, sheetName) {
+    const headers = HEADERS_MAP[sheetName] || ['ID', 'Dato 1', 'Dato 2']
+    const requests = []
+
+    // 1. Insertar encabezados
+    requests.push({
+        updateCells: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: headers.length },
+            rows: [{
+                values: headers.map(h => ({
+                    userEnteredValue: { stringValue: h },
+                    userEnteredFormat: {
+                        backgroundColor: { red: 0.1, green: 0.22, blue: 0.41 },
+                        textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 11 },
+                        horizontalAlignment: 'CENTER'
+                    }
+                }))
+            }],
+            fields: 'userEnteredValue,userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+        }
+    })
+
+    // 2. Colores Alternados (Banding)
+    requests.push({
+        addBanding: {
+            bandedRange: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: headers.length },
+                rowProperties: {
+                    headerColor: { red: 0.1, green: 0.22, blue: 0.41 },
+                    firstBandColor: { red: 1, green: 1, blue: 1 },
+                    secondBandColor: { red: 0.95, green: 0.96, blue: 0.98 }
+                }
+            }
+        }
+    })
+
+    // 3. Activar Filtro Básico
+    requests.push({
+        setBasicFilter: {
+            filter: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: headers.length } }
+        }
+    })
+
+    // 4. Inmovilizar Fila 1
+    requests.push({
+        updateSheetProperties: {
+            properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
+            fields: 'gridProperties.frozenRowCount'
+        }
+    })
+
+    return requests
+}
+
 // Crear el Spreadsheet con todas las hojas del SRS 6.2 (Real)
 export async function createSpreadsheet(title = 'ADI — Agenda Docente Inteligente') {
     if (!isGoogleConfigured()) return null
@@ -25,72 +89,11 @@ export async function createSpreadsheet(title = 'ADI — Agenda Docente Intelige
         spreadsheetId = response.result.spreadsheetId
         console.log('[SheetsService] Spreadsheet creado:', spreadsheetId)
 
-        // Definir encabezados por hoja
-        const HEADERS_MAP = {
-            [SHEET_NAMES.ALUMNOS]: ['ID', 'Nombre', 'Apellido', 'DNI', 'Fecha Nacimiento', 'Teléfono', 'Email Tutor', 'ID Curso', 'Estado'],
-            [SHEET_NAMES.ASISTENCIA]: ['Fecha', 'ID Alumno', 'Estado', 'ID Curso'],
-            [SHEET_NAMES.NOTAS]: ['ID Alumno', 'Materia', 'Nota 1', 'Nota 2', 'Nota 3', 'Nota 4', 'Nota 5'],
-            [SHEET_NAMES.LIBRO_TEMAS]: ['Fecha', 'ID Curso', 'Materia', 'Eje/Tema', 'Actividades', 'Tarea'],
-            [SHEET_NAMES.AGENDA]: ['ID Evento', 'Tipo', 'Título', 'Fecha', 'Hora', 'Lugar', 'Notas', 'Alumnos Involucrados']
-        }
-
-        // Preparar peticiones de formato para cada hoja creada
         const formattingRequests = []
-
-        response.result.sheets.forEach((sheet, idx) => {
-            const sheetId = sheet.properties.sheetId
-            const sheetName = sheet.properties.title
-            const headers = HEADERS_MAP[sheetName] || ['ID', 'Dato 1', 'Dato 2']
-
-            // 1. Insertar encabezados
-            formattingRequests.push({
-                updateCells: {
-                    range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: headers.length },
-                    rows: [{
-                        values: headers.map(h => ({
-                            userEnteredValue: { stringValue: h },
-                            userEnteredFormat: {
-                                backgroundColor: { red: 0.1, green: 0.22, blue: 0.41 }, // "#1B3A6B" (Primary)
-                                textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 11 },
-                                horizontalAlignment: 'CENTER'
-                            }
-                        }))
-                    }],
-                    fields: 'userEnteredValue,userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
-                }
-            })
-
-            // 2. Colores Alternados (Banding)
-            formattingRequests.push({
-                addBanding: {
-                    bandedRange: {
-                        range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: headers.length },
-                        rowProperties: {
-                            headerColor: { red: 0.1, green: 0.22, blue: 0.41 },
-                            firstBandColor: { red: 1, green: 1, blue: 1 },
-                            secondBandColor: { red: 0.95, green: 0.96, blue: 0.98 } // Gris muy claro
-                        }
-                    }
-                }
-            })
-
-            // 3. Activar Filtro Básico
-            formattingRequests.push({
-                setBasicFilter: {
-                    filter: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: headers.length } }
-                }
-            })
-
-            // 4. Inmovilizar Fila 1
-            formattingRequests.push({
-                updateSheetProperties: {
-                    properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
-                    fields: 'gridProperties.frozenRowCount'
-                }
-            })
+        response.result.sheets.forEach((sheet) => {
+            formattingRequests.push(...buildFormattingRequests(sheet.properties.sheetId, sheet.properties.title))
         })
 
-        // Ejecutar las mejoras visuales
         if (formattingRequests.length > 0) {
             await gapi.client.sheets.spreadsheets.batchUpdate({
                 spreadsheetId,
@@ -108,7 +111,68 @@ export async function createSpreadsheet(title = 'ADI — Agenda Docente Intelige
     }
 }
 
-// Vincular un Spreadsheet existente
+// Extrae el ID de un link de Google Sheets, o devuelve el texto tal cual si ya es un ID
+export function extractSpreadsheetId(urlOrId) {
+    if (!urlOrId) return null
+    const match = urlOrId.match(/\/d\/([a-zA-Z0-9-_]+)/)
+    return match ? match[1] : urlOrId.trim()
+}
+
+// Vincular un Spreadsheet EXISTENTE: completa las pestañas que falten sin tocar las que ya existen
+export async function linkExistingSpreadsheet(urlOrId) {
+    if (!isGoogleConfigured()) return null
+
+    const id = extractSpreadsheetId(urlOrId)
+    if (!id) throw new Error('No se pudo interpretar el link o ID de la hoja')
+
+    try {
+        // 1. Leer la estructura actual de la hoja pegada
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: id })
+        const existingTitles = info.result.sheets.map(s => s.properties.title)
+
+        // 2. Detectar qué pestañas requeridas faltan
+        const requiredTitles = Object.values(SHEET_NAMES)
+        const missingTitles = requiredTitles.filter(t => !existingTitles.includes(t))
+
+        if (missingTitles.length > 0) {
+            // 3. Crear solo las pestañas faltantes (sin tocar las existentes)
+            const addSheetResponse = await gapi.client.sheets.spreadsheets.batchUpdate({
+                spreadsheetId: id,
+                resource: {
+                    requests: missingTitles.map(title => ({ addSheet: { properties: { title } } }))
+                }
+            })
+
+            // 4. Formatear (encabezados, bandas, filtro, fila congelada) cada pestaña nueva
+            const formattingRequests = []
+            addSheetResponse.result.replies.forEach((reply) => {
+                const props = reply.addSheet.properties
+                formattingRequests.push(...buildFormattingRequests(props.sheetId, props.title))
+            })
+
+            if (formattingRequests.length > 0) {
+                await gapi.client.sheets.spreadsheets.batchUpdate({
+                    spreadsheetId: id,
+                    resource: { requests: formattingRequests }
+                })
+            }
+        }
+
+        spreadsheetId = id
+        console.log('[SheetsService] Hoja existente vinculada:', id, '— pestañas agregadas:', missingTitles)
+
+        return {
+            spreadsheetId: id,
+            spreadsheetUrl: info.result.spreadsheetUrl,
+            missingTitles
+        }
+    } catch (error) {
+        console.error('[SheetsService] Error al vincular hoja existente:', error)
+        throw error
+    }
+}
+
+// Vincular un Spreadsheet existente (solo setea el ID en memoria, sin verificar estructura)
 export function setSpreadsheetId(id) {
     spreadsheetId = id
 }

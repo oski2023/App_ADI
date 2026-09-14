@@ -9,7 +9,7 @@ import useSettingsStore from '../../core/stores/useSettingsStore'
 import useAuthStore from '../../core/stores/useAuthStore'
 import toast from 'react-hot-toast'
 import { signIn, signOut } from '../../infrastructure/google/googleAuth'
-import { createSpreadsheet } from '../../infrastructure/google/sheetsService'
+import { createSpreadsheet, linkExistingSpreadsheet } from '../../infrastructure/google/sheetsService'
 import useSyncStore from '../../infrastructure/google/syncManager'
 
 export default function SettingsPage() {
@@ -23,6 +23,8 @@ export default function SettingsPage() {
         userEmail: user?.email || ''
     })
     const [isLinking, setIsLinking] = useState(false)
+    const [linkMode, setLinkMode] = useState('create') // 'create' | 'existing'
+    const [existingSheetInput, setExistingSheetInput] = useState('')
 
     const handleSave = () => {
         updateSettings(localSettings)
@@ -54,12 +56,30 @@ export default function SettingsPage() {
                     role: 'Docente'
                 })
 
-                // Crear Spreadsheet si no existe
-                toast.loading('Creando base de datos en Google Sheets...', { id: 'g-sync' })
-                const sheet = await createSpreadsheet()
+                    if (linkMode === 'existing') {
+                    if (!existingSheetInput.trim()) {
+                        toast.error('Pegá el link o ID de tu hoja de Google Sheets')
+                        setIsLinking(false)
+                        return
+                    }
+                    toast.loading('Vinculando con tu hoja existente...', { id: 'g-sync' })
+                    const sheet = await linkExistingSpreadsheet(existingSheetInput)
 
-                setGoogleLinked(true, sheet.spreadsheetUrl)
-                toast.success('¡App vinculada y base de datos creada!', { id: 'g-sync' })
+                    setGoogleLinked(true, sheet.spreadsheetUrl)
+                    toast.success(
+                        sheet.missingTitles.length > 0
+                            ? `¡Vinculada! Se agregaron las pestañas faltantes: ${sheet.missingTitles.join(', ')}`
+                            : '¡Hoja vinculada correctamente!',
+                        { id: 'g-sync' }
+                    )
+                } else {
+                    // Crear Spreadsheet nuevo
+                    toast.loading('Creando base de datos en Google Sheets...', { id: 'g-sync' })
+                    const sheet = await createSpreadsheet()
+
+                    setGoogleLinked(true, sheet.spreadsheetUrl)
+                    toast.success('¡App vinculada y base de datos creada!', { id: 'g-sync' })
+                }
 
                 // Forzar carga inicial de datos preexistentes a Google Sheets
                 setTimeout(() => {
@@ -245,17 +265,48 @@ export default function SettingsPage() {
                                     Desvincular
                                 </Button>
                             </div>
-                        ) : (
-                            <Button
-                                variant="primary"
-                                icon={ExternalLink}
-                                onClick={handleGoogleConnection}
-                                loading={isLinking}
-                                disabled={isLinking}
-                                className="w-full justify-center"
-                            >
-                                Vincular con Google
-                            </Button>
+                                                ) : (
+                            <div className="space-y-3">
+                                <div className="flex gap-4 text-sm text-text-primary">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="linkMode"
+                                            checked={linkMode === 'create'}
+                                            onChange={() => setLinkMode('create')}
+                                        />
+                                        Crear una base de datos nueva
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name="linkMode"
+                                            checked={linkMode === 'existing'}
+                                            onChange={() => setLinkMode('existing')}
+                                        />
+                                        Vincular una hoja existente
+                                    </label>
+                                </div>
+
+                                {linkMode === 'existing' && (
+                                    <Input
+                                        placeholder="Pegá el link o ID de tu Google Sheet"
+                                        value={existingSheetInput}
+                                        onChange={(e) => setExistingSheetInput(e.target.value)}
+                                    />
+                                )}
+
+                                <Button
+                                    variant="primary"
+                                    icon={ExternalLink}
+                                    onClick={handleGoogleConnection}
+                                    loading={isLinking}
+                                    disabled={isLinking}
+                                    className="w-full justify-center"
+                                >
+                                    Vincular con Google
+                                </Button>
+                            </div>
                         )}
                     </CardBody>
                 </Card>
