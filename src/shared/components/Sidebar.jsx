@@ -2,14 +2,14 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard, GraduationCap, Users, ClipboardCheck,
     BookOpen, FileText, CalendarDays, BarChart3, Settings,
-    NotebookPen, ChevronLeft, ChevronRight, Wifi, WifiOff, X, RefreshCw
+    NotebookPen, ChevronLeft, ChevronRight, Wifi, WifiOff, X, RefreshCw, Construction
 } from 'lucide-react'
 import { useState } from 'react'
 import useAuthStore from '../../core/stores/useAuthStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import { useSyncStore, SYNC_STATUS } from '../../infrastructure/google/syncManager'
 
-const navItems = [
+const navItemsEscuela = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/courses', label: 'Cursos', icon: GraduationCap },
     { path: '/students', label: 'Alumnos', icon: Users },
@@ -22,6 +22,11 @@ const navItems = [
     { path: '/settings', label: 'Configuración', icon: Settings },
 ]
 
+const navItemsFP = [
+    { path: '/fp', label: 'Formación Profesional', icon: Construction },
+    { path: '/settings', label: 'Configuración', icon: Settings },
+]
+
 export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClose }) {
     const user = useAuthStore((s) => s.user)
     const location = useLocation()
@@ -29,6 +34,8 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClo
     const online = useSyncStore((s) => s.online)
     const lastSync = useSyncStore((s) => s.lastSync)
     const googleLinked = useSettingsStore((s) => s.googleLinked)
+    const profileType = useSettingsStore((s) => s.profileType)
+    const navItems = profileType === 'fp' ? navItemsFP : navItemsEscuela
 
     const isExpanded = !collapsed || isMobileOpen
 

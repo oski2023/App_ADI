@@ -9,10 +9,13 @@ const useSettingsStore = create(
             googleLinked: false,
             spreadsheetUrl: null,
             darkMode: false,
+            profileType: 'escuela', // 'escuela' (Maestro/Profesor) | 'fp' (Formación Profesional)
 
             updateSettings: (newSettings) => set((state) => ({
                 settings: { ...state.settings, ...newSettings },
             })),
+
+            setProfileType: (type) => set({ profileType: type }),
 
             setGoogleLinked: (linked, url) => set({
                 googleLinked: linked,
@@ -37,6 +40,7 @@ const useSettingsStore = create(
                 googleLinked: state.googleLinked,
                 spreadsheetUrl: state.spreadsheetUrl,
                 darkMode: state.darkMode,
+                profileType: state.profileType,
             }),
         }
     )

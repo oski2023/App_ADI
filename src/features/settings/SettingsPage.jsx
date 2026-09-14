@@ -4,7 +4,7 @@ import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import Badge from '../../shared/components/Badge'
 import { Input, Select } from '../../shared/components/Input'
-import { Settings, Link2, Shield, Bell, Palette, Save, ExternalLink, Check, Sun, Moon, Monitor, AlertTriangle } from 'lucide-react'
+import { Settings, Link2, Shield, Bell, Palette, Save, ExternalLink, Check, Sun, Moon, Monitor, AlertTriangle, GraduationCap } from 'lucide-react'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import useAuthStore from '../../core/stores/useAuthStore'
 import toast from 'react-hot-toast'
@@ -13,7 +13,7 @@ import { createSpreadsheet, linkExistingSpreadsheet } from '../../infrastructure
 import useSyncStore from '../../infrastructure/google/syncManager'
 
 export default function SettingsPage() {
-        const { settings, updateSettings, googleLinked, setGoogleLinked, spreadsheetUrl, darkMode, toggleDarkMode } = useSettingsStore(useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings, googleLinked: s.googleLinked, setGoogleLinked: s.setGoogleLinked, spreadsheetUrl: s.spreadsheetUrl, darkMode: s.darkMode, toggleDarkMode: s.toggleDarkMode })))
+        const { settings, updateSettings, googleLinked, setGoogleLinked, spreadsheetUrl, darkMode, toggleDarkMode, profileType, setProfileType } = useSettingsStore(useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings, googleLinked: s.googleLinked, setGoogleLinked: s.setGoogleLinked, spreadsheetUrl: s.spreadsheetUrl, darkMode: s.darkMode, toggleDarkMode: s.toggleDarkMode, profileType: s.profileType, setProfileType: s.setProfileType })))
     const { user, setUser } = useAuthStore(useShallow((s) => ({ user: s.user, setUser: s.setUser })))
 
     const [localSettings, setLocalSettings] = useState({
@@ -108,7 +108,38 @@ export default function SettingsPage() {
                 </Button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Tipo de perfil (Escuela vs Formación Profesional) */}
+                <Card className="lg:col-span-2">
+                    <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
+                        <GraduationCap className="w-4 h-4 text-primary" />
+                        <h2 className="text-base font-semibold text-text-primary">Perfil de Trabajo</h2>
+                    </div>
+                    <CardBody>
+                        <p className="text-sm text-text-secondary mb-3">
+                            Elegí qué tipo de menú y funciones querés ver en la app.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setProfileType('escuela')}
+                                className={`text-left p-4 rounded-xl border-2 transition-colors ${profileType === 'escuela' ? 'border-primary bg-primary/5' : 'border-border-light hover:bg-bg-hover'}`}
+                            >
+                                <p className="font-semibold text-text-primary">Maestro / Profesor</p>
+                                <p className="text-xs text-text-secondary mt-1">Cursos, Alumnos, Asistencia, Notas, Libro de Temas y Agenda</p>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setProfileType('fp')}
+                                className={`text-left p-4 rounded-xl border-2 transition-colors ${profileType === 'fp' ? 'border-primary bg-primary/5' : 'border-border-light hover:bg-bg-hover'}`}
+                            >
+                                <p className="font-semibold text-text-primary">Formación Profesional</p>
+                                <p className="text-xs text-text-secondary mt-1">Fichas de curso, estudiantes, tema y asistencia, actas de examen</p>
+                            </button>
+                        </div>
+                    </CardBody>
+                </Card>
+
                 {/* Profile */}
                 <Card>
                     <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
