@@ -27,6 +27,7 @@ const navItemsFP = [
     { path: '/fp/courses', label: 'Fichas de Curso', icon: GraduationCap },
     { path: '/fp/topic-attendance', label: 'Tema y Asistencia', icon: NotebookPen },
     { path: '/fp/attendance-sheet', label: 'Asistencia de Alumnos', icon: ClipboardCheck },
+    { path: '/fp/exam-act', label: 'Actas de Examen', icon: FileText },
     { path: '/settings', label: 'Configuración', icon: Settings },
 ]
 

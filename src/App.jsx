@@ -14,6 +14,7 @@ import FPDashboardPage from './features/fp/FPDashboardPage'
 import FPCoursesPage from './features/fp/FPCoursesPage'
 import FPTopicAttendancePage from './features/fp/FPTopicAttendancePage'
 import FPAttendanceSheetPage from './features/fp/FPAttendanceSheetPage'
+import FPExamActPage from './features/fp/FPExamActPage'
 
 import { useEffect, useCallback } from 'react'
 import useSettingsStore from './core/stores/useSettingsStore'
@@ -99,6 +100,7 @@ export default function App() {
                     <Route path="/fp/courses" element={<FPCoursesPage />} />
                     <Route path="/fp/topic-attendance" element={<FPTopicAttendancePage />} />
                     <Route path="/fp/attendance-sheet" element={<FPAttendanceSheetPage />} />
+                    <Route path="/fp/exam-act" element={<FPExamActPage />} />
                 </Route>
             </Routes>
             <Toaster position="bottom-right" toastOptions={{ className: 'text-sm font-medium rounded-lg shadow-lg' }} />
