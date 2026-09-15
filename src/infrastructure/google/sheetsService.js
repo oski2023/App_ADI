@@ -275,6 +275,56 @@ export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
     }
 }
 
+// Mapeo de celdas — Planilla de Tema y Asistencia del Instructor
+const FP_TOPIC_CELL_MAP = {
+    region: 'B4',
+    distrito: 'F4',
+    cfpNumero: 'B5',
+    cursoNumero: 'F5',
+    especialidad: 'C7',
+    sedeDictado: 'C9',
+    mesDe: 'L5',
+    instructor: 'N8',
+}
+const FP_TOPIC_HORARIO_CELLS = { lunes: 'G9', martes: 'H9', miercoles: 'I9', jueves: 'J9', viernes: 'K9', sabado: 'L9' }
+const FP_TOPIC_START_ROW = 13
+const FP_TOPIC_ENTRY_COLUMNS = {
+    fecha: 'A',
+    tema: 'C',
+    tiempoEstimado: 'I',
+    firmaInstructor: 'K',
+    observaciones: 'M',
+    firmaDirector: 'O',
+}
+
+// Sincronizar Tema y Asistencia del Instructor hacia su archivo vinculado
+export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.entries(FP_TOPIC_CELL_MAP).forEach(([field, cell]) => pushCell(cell, sheet[field]))
+        Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, sheet.horarios[dia]))
+
+        sheet.entries.forEach((e, idx) => {
+            const row = FP_TOPIC_START_ROW + idx
+            Object.entries(FP_TOPIC_ENTRY_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, e[field]))
+        })
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al sincronizar Tema y Asistencia:', error)
+        throw error
+    }
+}
+
 
 // Leer datos de una hoja (Real)
 export async function readSheet(sheetName, range = 'A:Z') {

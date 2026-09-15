@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Plus, Trash2, ArrowLeft, NotebookPen } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw } from 'lucide-react'
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
+import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import { syncFPTopicAttendanceSheet } from '../../infrastructure/google/sheetsService'
+import toast from 'react-hot-toast'
 
 const DIAS = [
     { key: 'lunes', label: 'Lunes' },
@@ -24,8 +27,26 @@ export default function FPTopicAttendancePage() {
     const updateEntry = useFPTopicAttendanceStore((s) => s.updateEntry)
     const deleteEntry = useFPTopicAttendanceStore((s) => s.deleteEntry)
 
-    const [selectedId, setSelectedId] = useState(null)
+        const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
+    const topicLink = useFPGoogleLinksStore((s) => s.links.topicAttendance)
+    const [syncing, setSyncing] = useState(false)
+
+    const handleSync = async () => {
+        if (!topicLink) {
+            toast.error('Primero vinculá el archivo de Tema y Asistencia en Configuración')
+            return
+        }
+        setSyncing(true)
+        try {
+            await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, selected)
+            toast.success('Sincronizado con Google Sheets')
+        } catch (error) {
+            toast.error('Error al sincronizar con Google Sheets')
+        } finally {
+            setSyncing(false)
+        }
+    }
 
     if (selected) {
         return (
@@ -34,9 +55,12 @@ export default function FPTopicAttendancePage() {
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
-                    <h1 className="text-xl font-bold text-text-primary">
+                    <h1 className="text-xl font-bold text-text-primary flex-1">
                         Planilla de Tema y Asistencia {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
+                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
+                        Sincronizar con Sheets
+                    </Button>
                 </div>
 
                 {/* Datos generales */}
