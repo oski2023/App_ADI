@@ -11,6 +11,7 @@ import CalendarPage from './features/calendar/CalendarPage'
 import ReportsPage from './features/reports/ReportsPage'
 import SettingsPage from './features/settings/SettingsPage'
 import FPDashboardPage from './features/fp/FPDashboardPage'
+import FPCoursesPage from './features/fp/FPCoursesPage'
 
 import { useEffect, useCallback } from 'react'
 import useSettingsStore from './core/stores/useSettingsStore'
@@ -93,6 +94,7 @@ export default function App() {
                     <Route path="/reports" element={<ReportsPage />} />
                     <Route path="/settings" element={<SettingsPage />} />
                     <Route path="/fp" element={<FPDashboardPage />} />
+                    <Route path="/fp/courses" element={<FPCoursesPage />} />
                 </Route>
             </Routes>
             <Toaster position="bottom-right" toastOptions={{ className: 'text-sm font-medium rounded-lg shadow-lg' }} />

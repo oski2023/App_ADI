@@ -24,6 +24,7 @@ const navItemsEscuela = [
 
 const navItemsFP = [
     { path: '/fp', label: 'Formación Profesional', icon: Construction },
+    { path: '/fp/courses', label: 'Fichas de Curso', icon: GraduationCap },
     { path: '/settings', label: 'Configuración', icon: Settings },
 ]
 
