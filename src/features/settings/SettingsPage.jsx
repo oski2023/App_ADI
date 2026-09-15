@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { signIn, signOut } from '../../infrastructure/google/googleAuth'
 import { createSpreadsheet, linkExistingSpreadsheet } from '../../infrastructure/google/sheetsService'
 import useSyncStore from '../../infrastructure/google/syncManager'
+import FPGoogleLinksSection from './FPGoogleLinksSection'
 
 export default function SettingsPage() {
         const { settings, updateSettings, googleLinked, setGoogleLinked, spreadsheetUrl, darkMode, toggleDarkMode, profileType, setProfileType } = useSettingsStore(useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings, googleLinked: s.googleLinked, setGoogleLinked: s.setGoogleLinked, spreadsheetUrl: s.spreadsheetUrl, darkMode: s.darkMode, toggleDarkMode: s.toggleDarkMode, profileType: s.profileType, setProfileType: s.setProfileType })))
@@ -436,8 +437,14 @@ export default function SettingsPage() {
                             </Button>
                         </div>
                     </CardBody>
-                </Card>
+                                </Card>
             </div>
+
+            {profileType === 'fp' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <FPGoogleLinksSection />
+                </div>
+            )}
 
         </div>
     )

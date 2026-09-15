@@ -177,6 +177,105 @@ export function setSpreadsheetId(id) {
     spreadsheetId = id
 }
 
+// ============================================================
+// FORMACIÓN PROFESIONAL — vinculación de archivos individuales
+// ============================================================
+
+// Extrae el gid (identificador de pestaña) de un link de Google Sheets, si lo tiene
+export function extractSheetGid(urlOrId) {
+    if (!urlOrId) return null
+    const match = urlOrId.match(/[#&]gid=(\d+)/)
+    return match ? parseInt(match[1], 10) : null
+}
+
+// Vincular un documento de FP: guarda spreadsheetId + la pestaña EXACTA indicada por el gid del link
+// (si el link no trae gid, usa la primera pestaña del archivo)
+export async function linkFPDocument(urlOrId) {
+    if (!isGoogleConfigured()) return null
+
+    const id = extractSpreadsheetId(urlOrId)
+    if (!id) throw new Error('No se pudo interpretar el link o ID de la hoja')
+    const gid = extractSheetGid(urlOrId)
+
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: id })
+
+        let sheet = info.result.sheets[0]
+        if (gid !== null) {
+            const match = info.result.sheets.find((s) => s.properties.sheetId === gid)
+            if (match) sheet = match
+        }
+
+        return {
+            spreadsheetId: id,
+            sheetTitle: sheet.properties.title,
+            spreadsheetUrl: `${info.result.spreadsheetUrl}#gid=${sheet.properties.sheetId}`,
+        }
+    } catch (error) {
+        console.error('[SheetsService] Error al vincular documento FP:', error)
+        throw error
+    }
+}
+
+// Mapeo de celdas — Ficha de Curso
+const FP_COURSE_CELL_MAP = {
+    cfpNumero: 'O1',
+    distrito: 'O2',
+    anio: 'S1',
+    cursoNumero: 'S2',
+    especialidad: 'C4',
+    fechaInicio: 'C5',
+    fechaTerminacion: 'F5',
+    duracion: 'I5',
+    lugarDictado: 'C6',
+    instructor: 'N6',
+}
+const FP_COURSE_HORARIO_CELLS = { lunes: 'M5', martes: 'N5', miercoles: 'O5', jueves: 'P5', viernes: 'Q5', sabado: 'R5' }
+const FP_COURSE_MATRICULA_CELLS = { v: 'S6', m: 'T6', x: 'U6' }
+const FP_COURSE_STUDENT_START_ROW = 9
+const FP_COURSE_STUDENT_COLUMNS = {
+    documentoTipo: 'B',
+    documentoNumero: 'C',
+    sexo: 'D',
+    apellidosNombres: 'E',
+    fechaNacimiento: 'H',
+    nacionalidad: 'K',
+    domicilio: 'M',
+    localidad: 'P',
+    contacto: 'S',
+}
+
+// Sincronizar Ficha de Curso hacia su archivo vinculado (mail merge celda por celda)
+export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.entries(FP_COURSE_CELL_MAP).forEach(([field, cell]) => pushCell(cell, course[field]))
+        Object.entries(FP_COURSE_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, course.horarios[dia]))
+        Object.entries(FP_COURSE_MATRICULA_CELLS).forEach(([campo, cell]) => pushCell(cell, course.matricula[campo]))
+
+        course.students.forEach((s, idx) => {
+            const row = FP_COURSE_STUDENT_START_ROW + idx
+            pushCell(`A${row}`, idx + 1)
+            Object.entries(FP_COURSE_STUDENT_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, s[field]))
+        })
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al sincronizar Ficha de Curso:', error)
+        throw error
+    }
+}
+
+
 // Leer datos de una hoja (Real)
 export async function readSheet(sheetName, range = 'A:Z') {
     if (!isGoogleConfigured() || !spreadsheetId) return []

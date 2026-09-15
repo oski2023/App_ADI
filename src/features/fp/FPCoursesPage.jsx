@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Plus, Trash2, ArrowLeft, GraduationCap } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
+import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import { syncFPCourseSheet } from '../../infrastructure/google/sheetsService'
+import toast from 'react-hot-toast'
 
 const DIAS = [
     { key: 'lunes', label: 'Lunes' },
@@ -27,6 +30,24 @@ export default function FPCoursesPage() {
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = courses.find((c) => c.id === selectedId)
+    const courseLink = useFPGoogleLinksStore((s) => s.links.course)
+    const [syncing, setSyncing] = useState(false)
+
+    const handleSync = async () => {
+        if (!courseLink) {
+            toast.error('Primero vinculá el archivo de Ficha de Curso en Configuración')
+            return
+        }
+        setSyncing(true)
+        try {
+            await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, selected)
+            toast.success('Sincronizado con Google Sheets')
+        } catch (error) {
+            toast.error('Error al sincronizar con Google Sheets')
+        } finally {
+            setSyncing(false)
+        }
+    }
 
     if (selected) {
         return (
@@ -35,9 +56,12 @@ export default function FPCoursesPage() {
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
-                    <h1 className="text-xl font-bold text-text-primary">
+                    <h1 className="text-xl font-bold text-text-primary flex-1">
                         Ficha de Curso {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
+                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
+                        Sincronizar con Sheets
+                    </Button>
                 </div>
 
                 {/* Datos generales del curso */}
