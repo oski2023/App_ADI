@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Plus, Trash2, ArrowLeft, FileText } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, FileText, Calculator } from 'lucide-react'
 import useFPExamActStore from '../../core/stores/useFPExamActStore'
+import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
+import { numberToWordsEs } from '../../utils/numberToWordsEs'
+import toast from 'react-hot-toast'
 
 const RESUMEN_FIELDS = [
     { key: 'inscriptos', label: 'Inscriptos' },
@@ -23,8 +26,44 @@ export default function FPExamActPage() {
     const updateStudent = useFPExamActStore((s) => s.updateStudent)
     const deleteStudent = useFPExamActStore((s) => s.deleteStudent)
 
-    const [selectedId, setSelectedId] = useState(null)
+        const [selectedId, setSelectedId] = useState(null)
     const selected = acts.find((a) => a.id === selectedId)
+    const attendanceSheets = useFPAttendanceSheetStore((s) => s.sheets)
+
+    const handleCalcularAsistencia = () => {
+        const matchingSheets = attendanceSheets.filter(
+            (as) => as.cursoNumero && selected.cursoNumero && as.cursoNumero.trim() === selected.cursoNumero.trim()
+        )
+        if (matchingSheets.length === 0) {
+            toast.error('No se encontraron informes de Asistencia de Alumnos para este Curso Nº')
+            return
+        }
+
+        selected.students.forEach((st) => {
+            let totalPres = 0
+            let totalAus = 0
+            let found = false
+            matchingSheets.forEach((as) => {
+                const match = as.students.find(
+                    (s) => s.apellidosNombres.trim().toLowerCase() === st.apellidosNombres.trim().toLowerCase()
+                )
+                if (match) {
+                    found = true
+                    totalPres += Number(match.totalPres) || 0
+                    totalAus += Number(match.totalAus) || 0
+                }
+            })
+            if (found && totalPres + totalAus > 0) {
+                const pct = Math.round((totalPres / (totalPres + totalAus)) * 100)
+                updateStudent(selected.id, st.id, {
+                    asistenciasNota: String(pct),
+                    asistenciasLetras: numberToWordsEs(pct),
+                })
+            }
+        })
+
+        toast.success('Asistencia calculada y completada')
+    }
 
     if (selected) {
         return (
@@ -76,9 +115,14 @@ export default function FPExamActPage() {
                 <Card>
                     <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
                         <h2 className="text-base font-semibold text-text-primary">Notas por Estudiante</h2>
-                        <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
-                            Agregar Estudiante
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="outline" icon={Calculator} size="sm" onClick={handleCalcularAsistencia}>
+                                Calcular Asistencia
+                            </Button>
+                            <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
+                                Agregar Estudiante
+                            </Button>
+                        </div>
                     </div>
                     <CardBody className="overflow-x-auto">
                         <table className="text-sm border-collapse min-w-[1400px]">
