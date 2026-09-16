@@ -400,13 +400,70 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
 
         return true
     } catch (error) {
-        console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
+                console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
         throw error
     }
 }
 
+// Mapeo de celdas — Acta de Examen
+const FP_EXAM_ACT_CELL_MAP = {
+    cfpNumero: 'C3',
+    distrito: 'G3',
+    especialidad: 'M7',
+    cursoNumero: 'S7',
+}
+const FP_EXAM_ACT_STUDENT_START_ROW = 11
+const FP_EXAM_ACT_STUDENT_COLUMNS = {
+    nroEgresados: 'A',
+    nro: 'C',
+    apellidosNombres: 'D',
+    asistenciasNota: 'G',
+    asistenciasLetras: 'H',
+    practicasNota: 'J',
+    practicasLetras: 'K',
+    participacionNota: 'M',
+    participacionLetras: 'N',
+    examenFinalNota: 'P',
+    examenFinalLetras: 'Q',
+    documentoTipo: 'S',
+    documentoNumero: 'T',
+}
+const FP_EXAM_ACT_RESUMEN_CELLS = {
+    inscriptos: 'T21',
+    examinados: 'T22',
+    ausentes: 'T23',
+    desaprobados: 'T24',
+    aprobados: 'T25',
+}
 
-// Leer datos de una hoja (Real)
+// Sincronizar Acta de Examen hacia su archivo vinculado
+export async function syncFPExamActSheet(spreadsheetId, sheetTitle, act) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.entries(FP_EXAM_ACT_CELL_MAP).forEach(([field, cell]) => pushCell(cell, act[field]))
+        Object.entries(FP_EXAM_ACT_RESUMEN_CELLS).forEach(([campo, cell]) => pushCell(cell, act.resumen[campo]))
+
+        act.students.forEach((s, idx) => {
+            const row = FP_EXAM_ACT_STUDENT_START_ROW + idx
+            Object.entries(FP_EXAM_ACT_STUDENT_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, s[field]))
+        })
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al sincronizar Acta de Examen:', error)
+        throw error
+    }
+}
+
 export async function readSheet(sheetName, range = 'A:Z') {
     if (!isGoogleConfigured() || !spreadsheetId) return []
 

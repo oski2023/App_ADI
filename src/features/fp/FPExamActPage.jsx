@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Plus, Trash2, ArrowLeft, FileText, Calculator } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, FileText, Calculator, RefreshCw } from 'lucide-react'
 import useFPExamActStore from '../../core/stores/useFPExamActStore'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import { numberToWordsEs } from '../../utils/numberToWordsEs'
+import { syncFPExamActSheet } from '../../infrastructure/google/sheetsService'
+import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import toast from 'react-hot-toast'
 
 const RESUMEN_FIELDS = [
@@ -62,7 +64,26 @@ export default function FPExamActPage() {
             }
         })
 
-        toast.success('Asistencia calculada y completada')
+                toast.success('Asistencia calculada y completada')
+    }
+
+    const examActLink = useFPGoogleLinksStore((s) => s.links.examAct)
+    const [syncing, setSyncing] = useState(false)
+
+    const handleSync = async () => {
+        if (!examActLink) {
+            toast.error('Primero vinculá el archivo de Acta de Examen en Configuración')
+            return
+        }
+        setSyncing(true)
+        try {
+            await syncFPExamActSheet(examActLink.spreadsheetId, examActLink.sheetTitle, selected)
+            toast.success('Sincronizado con Google Sheets')
+        } catch (error) {
+            toast.error('Error al sincronizar con Google Sheets')
+        } finally {
+            setSyncing(false)
+        }
     }
 
     if (selected) {
@@ -72,9 +93,12 @@ export default function FPExamActPage() {
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
-                    <h1 className="text-xl font-bold text-text-primary">
+                    <h1 className="text-xl font-bold text-text-primary flex-1">
                         Acta de Examen {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
+                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
+                        Sincronizar con Sheets
+                    </Button>
                 </div>
 
                 {/* Datos generales */}
