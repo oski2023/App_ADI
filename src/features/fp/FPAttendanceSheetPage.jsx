@@ -2,8 +2,11 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Plus, Trash2, ArrowLeft, ClipboardCheck } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
+import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import { syncFPAttendanceSheet } from '../../infrastructure/google/sheetsService'
+import toast from 'react-hot-toast'
 
 const DIAS_SEMANA = [
     { key: 'lunes', label: 'Lunes' },
@@ -42,6 +45,24 @@ export default function FPAttendanceSheetPage() {
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
+    const attendanceLink = useFPGoogleLinksStore((s) => s.links.attendanceSheet)
+    const [syncing, setSyncing] = useState(false)
+
+    const handleSync = async () => {
+        if (!attendanceLink) {
+            toast.error('Primero vinculá el archivo de Asistencia de Alumnos en Configuración')
+            return
+        }
+        setSyncing(true)
+        try {
+            await syncFPAttendanceSheet(attendanceLink.spreadsheetId, attendanceLink.sheetTitle, selected)
+            toast.success('Sincronizado con Google Sheets')
+        } catch (error) {
+            toast.error('Error al sincronizar con Google Sheets')
+        } finally {
+            setSyncing(false)
+        }
+    }
 
     if (selected) {
         return (
@@ -50,9 +71,12 @@ export default function FPAttendanceSheetPage() {
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
-                    <h1 className="text-xl font-bold text-text-primary">
+                    <h1 className="text-xl font-bold text-text-primary flex-1">
                         Asistencia de Alumnos {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
+                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
+                        Sincronizar con Sheets
+                    </Button>
                 </div>
 
                 {/* Datos generales */}

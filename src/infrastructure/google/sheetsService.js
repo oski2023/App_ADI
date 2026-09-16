@@ -325,6 +325,86 @@ export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, shee
     }
 }
 
+// Convierte un número de columna (1 = A, 2 = B, ...) a su letra de columna en Sheets
+function numberToColumnLetter(num) {
+    let col = ''
+    while (num > 0) {
+        const rem = (num - 1) % 26
+        col = String.fromCharCode(65 + rem) + col
+        num = Math.floor((num - 1) / 26)
+    }
+    return col
+}
+
+// Mapeo de celdas — Asistencia de Alumnos (grilla mensual)
+const FP_ATTENDANCE_CELL_MAP = {
+    centroNumero: 'Y3',
+    distrito: 'Y4',
+    cursoNumero: 'AJ3',
+    especialidad: 'C6',
+    informeMes: 'T6',
+    informeAnio: 'X6',
+    lugarDictado: 'C7',
+    enLaCalle: 'K7',
+    localidad: 'X7',
+}
+const FP_ATTENDANCE_HORARIO_CELLS = { lunes: 'AC7', martes: 'AF7', miercoles: 'AI7', jueves: 'AM7', viernes: 'AN7', sabado: 'AO7' }
+const FP_ATTENDANCE_STUDENT_START_ROW = 11
+const FP_ATTENDANCE_DAY_START_COL = 6 // columna F
+const FP_ATTENDANCE_BAJA_START_ROW = 21
+const FP_ATTENDANCE_MOVIMIENTO_CELLS = {
+    totalInicioMes: 'AM28',
+    altas: 'AM29',
+    bajas: 'AO29',
+    totalVarones: 'AM30',
+    totalMujeres: 'AM31',
+    totalAlumnos: 'AM32',
+}
+
+// Sincronizar Asistencia de Alumnos hacia su archivo vinculado
+export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.entries(FP_ATTENDANCE_CELL_MAP).forEach(([field, cell]) => pushCell(cell, sheet[field]))
+        Object.entries(FP_ATTENDANCE_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, sheet.horarios[dia]))
+
+        sheet.students.forEach((st, idx) => {
+            const row = FP_ATTENDANCE_STUDENT_START_ROW + idx
+            pushCell(`B${row}`, st.sexo)
+            pushCell(`C${row}`, st.apellidosNombres)
+            for (let d = 1; d <= 31; d++) {
+                const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
+                pushCell(`${colLetter}${row}`, st.days[d])
+            }
+            pushCell(`AK${row}`, st.totalAus)
+            pushCell(`AL${row}`, st.totalPres)
+            pushCell(`AM${row}`, st.temasTratados)
+        })
+
+        sheet.bajas.forEach((b, idx) => {
+            const row = FP_ATTENDANCE_BAJA_START_ROW + idx
+            pushCell(`AM${row}`, b.sexo)
+            pushCell(`AN${row}`, b.apellidosNombres)
+        })
+
+        Object.entries(FP_ATTENDANCE_MOVIMIENTO_CELLS).forEach(([campo, cell]) => pushCell(cell, sheet.movimiento[campo]))
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
+        throw error
+    }
+}
+
 
 // Leer datos de una hoja (Real)
 export async function readSheet(sheetName, range = 'A:Z') {
