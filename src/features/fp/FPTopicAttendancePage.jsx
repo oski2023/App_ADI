@@ -7,7 +7,7 @@ import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw, CloudDownload, Link2 }
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
-import { pullConfigFromCloud, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
+import { syncCloudConfig, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -90,12 +90,22 @@ export default function FPTopicAttendancePage() {
         let activeLink = topicLink
         if (!activeLink) {
             toast.loading('Buscando enlace en tu Google Drive...', { id: 'cloud-cfg' })
-            const cloudCfg = await pullConfigFromCloud()
-            if (cloudCfg?.fp_links?.topicAttendance) {
-                activeLink = cloudCfg.fp_links.topicAttendance
-                toast.success('¡Enlace detectado automáticamente desde Google Drive!', { id: 'cloud-cfg' })
-            } else {
+            try {
+                const cloudCfg = await syncCloudConfig()
+                if (cloudCfg?.fp_links?.topicAttendance) {
+                    activeLink = cloudCfg.fp_links.topicAttendance
+                    toast.success('¡Enlace detectado automáticamente desde Google Drive!', { id: 'cloud-cfg' })
+                } else {
+                    toast.dismiss('cloud-cfg')
+                    setShowLinkModal(true)
+                    return
+                }
+            } catch (error) {
                 toast.dismiss('cloud-cfg')
+                if (isAuthError(error)) {
+                    notifyAuthExpired(() => handlePullFromSheets(targetSheetId))
+                    return
+                }
                 setShowLinkModal(true)
                 return
             }
@@ -116,7 +126,7 @@ export default function FPTopicAttendancePage() {
             const result = await linkFPDocument(linkInput.trim())
             setLink('topicAttendance', result)
             // Guardar en Google Drive para que esté disponible en otros dispositivos
-            pushConfigToCloud()
+            await pushConfigToCloud()
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')

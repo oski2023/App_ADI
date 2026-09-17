@@ -3,6 +3,7 @@
 // Permite que el celular reconozca automáticamente los enlaces configurados en la PC
 
 import { isGoogleConfigured } from './googleConfig'
+import { ensureActiveSession } from './googleAuth'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useFPAdminLinksStore from '../../core/stores/useFPAdminLinksStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
@@ -15,6 +16,13 @@ let cachedConfigSpreadsheetId = null
 export async function findOrCreateConfigSpreadsheet() {
     if (!isGoogleConfigured()) return null
     if (cachedConfigSpreadsheetId) return cachedConfigSpreadsheetId
+
+    // Asegurar que exista una sesión activa de Google
+    const hasAuth = await ensureActiveSession()
+    if (!hasAuth) {
+        console.warn('[CloudConfigService] No hay sesión activa para acceder a Google Drive')
+        return null
+    }
 
     try {
         // 1. Buscar si ya existe la hoja en Drive
@@ -60,7 +68,7 @@ export async function findOrCreateConfigSpreadsheet() {
         return cachedConfigSpreadsheetId
     } catch (error) {
         console.error('[CloudConfigService] Error al buscar o crear ADI_Configuracion:', error)
-        return null
+        throw error
     }
 }
 
@@ -144,6 +152,83 @@ export async function pullConfigFromCloud() {
         return parsed
     } catch (error) {
         console.error('[CloudConfigService] Error al traer configuración de Google Drive:', error)
+        throw error
+    }
+}
+
+// Sincronización bidireccional inteligente:
+// 1. Trae los datos de Google Drive.
+// 2. Si la app local tiene enlaces no presentes en Drive (ej. cargados en la PC), los fusiona y los sube.
+// 3. Si Drive tiene enlaces no presentes localmente (ej. en el celular nuevo), los descarga.
+export async function syncCloudConfig() {
+    if (!isGoogleConfigured()) return null
+
+    const hasAuth = await ensureActiveSession()
+    if (!hasAuth) {
+        console.warn('[CloudConfigService] No hay sesión activa para sincronizar enlaces')
         return null
+    }
+
+    try {
+        const cloudData = await pullConfigFromCloud()
+
+        const localFpLinks = useFPGoogleLinksStore.getState().links || {}
+        const localAdminLinks = useFPAdminLinksStore.getState().links || {}
+        const localMainUrl = useSettingsStore.getState().spreadsheetUrl || ''
+
+        let needsPush = false
+
+        // Fusión de fp_links
+        const mergedFpLinks = { ...(cloudData?.fp_links || {}) }
+        for (const [k, v] of Object.entries(localFpLinks)) {
+            if (v && v.spreadsheetId) {
+                if (!mergedFpLinks[k] || !mergedFpLinks[k].spreadsheetId) {
+                    mergedFpLinks[k] = v
+                    needsPush = true
+                }
+            }
+        }
+
+        // Fusión de fp_admin_links
+        const mergedAdminLinks = { ...(cloudData?.fp_admin_links || {}) }
+        for (const [k, v] of Object.entries(localAdminLinks)) {
+            if (v && v.spreadsheetId) {
+                if (!mergedAdminLinks[k] || !mergedAdminLinks[k].spreadsheetId) {
+                    mergedAdminLinks[k] = v
+                    needsPush = true
+                }
+            }
+        }
+
+        // Fusión de main_spreadsheet_url
+        let mergedMainUrl = cloudData?.main_spreadsheet_url || ''
+        if (!mergedMainUrl && localMainUrl) {
+            mergedMainUrl = localMainUrl
+            needsPush = true
+        }
+
+        // Hidratar stores locales con los datos fusionados
+        useFPGoogleLinksStore.getState().setAllLinks(mergedFpLinks)
+        useFPAdminLinksStore.getState().setAllLinks(mergedAdminLinks)
+        if (mergedMainUrl) {
+            useSettingsStore.getState().setGoogleLinked(true, mergedMainUrl)
+            const idMatch = mergedMainUrl.match(/\/d\/([a-zA-Z0-9-_]+)/)
+            if (idMatch) setSpreadsheetId(idMatch[1])
+        }
+
+        // Si la memoria local tenía enlaces que Drive no tenía, respaldar en Drive inmediatamente
+        if (needsPush) {
+            await pushConfigToCloud()
+            console.log('[CloudConfigService] Enlaces locales respaldados automáticamente en Google Drive')
+        }
+
+        return {
+            fp_links: mergedFpLinks,
+            fp_admin_links: mergedAdminLinks,
+            main_spreadsheet_url: mergedMainUrl,
+        }
+    } catch (error) {
+        console.error('[CloudConfigService] Error en syncCloudConfig:', error)
+        throw error
     }
 }

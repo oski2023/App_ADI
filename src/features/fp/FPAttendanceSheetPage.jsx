@@ -7,7 +7,7 @@ import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPAttendanceSheet, readFPAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
-import { pullConfigFromCloud, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
+import { syncCloudConfig, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -106,12 +106,22 @@ export default function FPAttendanceSheetPage() {
         let activeLink = attendanceLink
         if (!activeLink) {
             toast.loading('Buscando enlace en tu Google Drive...', { id: 'cloud-cfg' })
-            const cloudCfg = await pullConfigFromCloud()
-            if (cloudCfg?.fp_links?.attendanceSheet) {
-                activeLink = cloudCfg.fp_links.attendanceSheet
-                toast.success('¡Enlace detectado automáticamente desde Google Drive!', { id: 'cloud-cfg' })
-            } else {
+            try {
+                const cloudCfg = await syncCloudConfig()
+                if (cloudCfg?.fp_links?.attendanceSheet) {
+                    activeLink = cloudCfg.fp_links.attendanceSheet
+                    toast.success('¡Enlace detectado automáticamente desde Google Drive!', { id: 'cloud-cfg' })
+                } else {
+                    toast.dismiss('cloud-cfg')
+                    setShowLinkModal(true)
+                    return
+                }
+            } catch (error) {
                 toast.dismiss('cloud-cfg')
+                if (isAuthError(error)) {
+                    notifyAuthExpired(() => handlePullFromSheets(targetSheetId))
+                    return
+                }
                 setShowLinkModal(true)
                 return
             }
@@ -132,7 +142,7 @@ export default function FPAttendanceSheetPage() {
             const result = await linkFPDocument(linkInput.trim())
             setLink('attendanceSheet', result)
             // Guardar en Google Drive para que esté disponible en otros dispositivos
-            pushConfigToCloud()
+            await pushConfigToCloud()
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')

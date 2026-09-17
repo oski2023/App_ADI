@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 import { signIn, signOut } from '../../infrastructure/google/googleAuth'
 import { createSpreadsheet, linkExistingSpreadsheet } from '../../infrastructure/google/sheetsService'
 import useSyncStore from '../../infrastructure/google/syncManager'
-import { pullConfigFromCloud, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
+import { syncCloudConfig, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
 import FPGoogleLinksSection from './FPGoogleLinksSection'
 
 export default function SettingsPage() {
@@ -64,7 +64,7 @@ export default function SettingsPage() {
 
                 // 1. Intentar recuperar configuración previa desde Google Drive (útil entre PC y celular)
                 toast.loading('Buscando configuración previa en tu Google Drive...', { id: 'g-sync' })
-                const cloudConfig = await pullConfigFromCloud()
+                const cloudConfig = await syncCloudConfig()
 
                 if (cloudConfig?.main_spreadsheet_url) {
                     toast.success('¡Configuración y planillas recuperadas de tu Google Drive!', { id: 'g-sync' })
@@ -316,11 +316,15 @@ export default function SettingsPage() {
                                     size="sm"
                                     onClick={async () => {
                                         toast.loading('Sincronizando enlaces con Google Drive...', { id: 'cloud-sync' })
-                                        const res = await pullConfigFromCloud()
-                                        if (res) {
-                                            toast.success('Enlaces sincronizados desde Google Drive', { id: 'cloud-sync' })
-                                        } else {
-                                            toast.error('No se pudieron recuperar enlaces de Drive', { id: 'cloud-sync' })
+                                        try {
+                                            const res = await syncCloudConfig()
+                                            if (res) {
+                                                toast.success('Enlaces sincronizados desde Google Drive', { id: 'cloud-sync' })
+                                            } else {
+                                                toast.error('No se pudieron recuperar enlaces de Drive', { id: 'cloud-sync' })
+                                            }
+                                        } catch (e) {
+                                            toast.error('Error al sincronizar con Google Drive', { id: 'cloud-sync' })
                                         }
                                     }}
                                     className="w-full justify-center text-xs"

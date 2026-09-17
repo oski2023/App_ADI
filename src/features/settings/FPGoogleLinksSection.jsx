@@ -7,7 +7,8 @@ import toast from 'react-hot-toast'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isGoogleConfigured } from '../../infrastructure/google/googleConfig'
-import { pushConfigToCloud, pullConfigFromCloud } from '../../infrastructure/google/cloudConfigService'
+import { pushConfigToCloud, syncCloudConfig } from '../../infrastructure/google/cloudConfigService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 
 const DOCS = [
     { key: 'course', label: 'Ficha de Curso' },
@@ -61,14 +62,18 @@ export default function FPGoogleLinksSection() {
         }
         setSyncingCloud(true)
         try {
-            const cfg = await pullConfigFromCloud()
+            const cfg = await syncCloudConfig()
             if (cfg?.fp_links && Object.keys(cfg.fp_links).length > 0) {
                 toast.success('Enlaces sincronizados desde tu Google Drive')
             } else {
                 toast('No se encontraron enlaces guardados en tu Google Drive')
             }
         } catch (error) {
-            toast.error('Error al sincronizar enlaces desde Drive')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handlePullCloud)
+            } else {
+                toast.error('Error al sincronizar enlaces desde Drive')
+            }
         } finally {
             setSyncingCloud(false)
         }
