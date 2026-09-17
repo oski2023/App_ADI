@@ -21,10 +21,10 @@ export function notifyAuthExpired(onRetry) {
                     toast.dismiss(t.id)
                     try {
                         await reconnectGoogle()
-                        toast.success('Reconectado. Reintentando...')
+                        toast.success('Reconectado. Reintentando...', { duration: 3000, pauseOnHover: false })
                         if (onRetry) onRetry()
                     } catch (error) {
-                        toast.error('No se pudo reconectar automáticamente. Probá desde Configuración.')
+                        toast.error('No se pudo reconectar automáticamente. Probá desde Configuración.', { duration: 4000, pauseOnHover: false })
                     }
                 }}
                 className="underline font-bold text-primary"
@@ -32,5 +32,5 @@ export function notifyAuthExpired(onRetry) {
                 Reconectar
             </button>
         </div>
-    ), { duration: 10000 })
+    ), { duration: 10000, pauseOnHover: false })
 }

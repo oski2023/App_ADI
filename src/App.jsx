@@ -106,7 +106,14 @@ export default function App() {
                     <Route path="/fp/admin" element={<FPAdminPage />} />
                 </Route>
             </Routes>
-            <Toaster position="bottom-right" toastOptions={{ className: 'text-sm font-medium rounded-lg shadow-lg' }} />
+            <Toaster
+                position="bottom-right"
+                toastOptions={{
+                    duration: 3500,
+                    pauseOnHover: false,
+                    className: 'text-sm font-medium rounded-lg shadow-lg',
+                }}
+            />
 
             {/* PWA Update Notification */}
             {(offlineReady || needRefresh) && (
