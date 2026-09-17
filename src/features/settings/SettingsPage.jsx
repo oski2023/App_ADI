@@ -442,7 +442,7 @@ export default function SettingsPage() {
 
             {profileType === 'fp' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <FPGoogleLinksSection />
+                         <FPGoogleLinksSection />                    
                 </div>
             )}
 

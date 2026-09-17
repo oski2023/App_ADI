@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import {
     LayoutDashboard, GraduationCap, Users, ClipboardCheck,
     BookOpen, FileText, CalendarDays, BarChart3, Settings,
-    NotebookPen, ChevronLeft, ChevronRight, Wifi, WifiOff, X, RefreshCw, Construction
+    NotebookPen, ChevronLeft, ChevronRight, Wifi, WifiOff, X, RefreshCw, Construction, Briefcase
 } from 'lucide-react'
 import { useState } from 'react'
 import useAuthStore from '../../core/stores/useAuthStore'
@@ -28,6 +28,7 @@ const navItemsFP = [
     { path: '/fp/topic-attendance', label: 'Tema y Asistencia', icon: NotebookPen },
     { path: '/fp/attendance-sheet', label: 'Asistencia de Alumnos', icon: ClipboardCheck },
     { path: '/fp/exam-act', label: 'Actas de Examen', icon: FileText },
+    { path: '/fp/admin', label: 'Administrativo', icon: Briefcase },
     { path: '/settings', label: 'Configuración', icon: Settings },
 ]
 

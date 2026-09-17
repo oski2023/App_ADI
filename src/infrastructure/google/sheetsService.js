@@ -464,6 +464,34 @@ export async function syncFPExamActSheet(spreadsheetId, sheetTitle, act) {
     }
 }
 
+// Sincronizar el Registro Administrativo (papeles entregados) — limpia y vuelve a cargar todas las filas
+export async function syncFPAdminRecords(spreadsheetId, sheetTitle, records) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        // Limpiar filas de datos existentes (conserva la fila 1 de encabezados)
+        await gapi.client.sheets.spreadsheets.values.clear({
+            spreadsheetId,
+            range: `${sheetTitle}!A2:Z`,
+        })
+
+        if (records.length > 0) {
+            const rows = records.map((r) => [r.id, r.mes, r.documento, r.cohorte, r.cantidad, r.estado, r.link || ''])
+            await gapi.client.sheets.spreadsheets.values.append({
+                spreadsheetId,
+                range: `${sheetTitle}!A1`,
+                valueInputOption: 'RAW',
+                resource: { values: rows },
+            })
+        }
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al sincronizar Registro Administrativo:', error)
+        throw error
+    }
+}
+
 export async function readSheet(sheetName, range = 'A:Z') {
     if (!isGoogleConfigured() || !spreadsheetId) return []
 
