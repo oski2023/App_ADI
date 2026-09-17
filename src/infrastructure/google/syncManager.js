@@ -3,7 +3,7 @@
 
 import { create } from 'zustand'
 import { setSpreadsheetId, syncStudents, syncAttendance, syncGrades, syncTopicBook, syncCalendarEvents } from './sheetsService'
-import { initGoogleAuth, isSignedIn } from './googleAuth'
+import { initGoogleAuth, isSignedIn, autoInitIfLinked } from './googleAuth'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import useStudentStore from '../../core/stores/useStudentStore'
 import useAttendanceStore from '../../core/stores/useAttendanceStore'
@@ -34,10 +34,15 @@ export const useSyncStore = create((set, get) => ({
         if (!isConfigured) return
 
         // Cargar spreadsheetId desde configuración si existe
-        const { spreadsheetUrl } = useSettingsStore.getState()
+        const { spreadsheetUrl, googleLinked } = useSettingsStore.getState()
         if (spreadsheetUrl) {
             const id = spreadsheetUrl.split('/d/')[1]?.split('/')[0]
             if (id) setSpreadsheetId(id)
+        }
+
+        // Si ya estaba vinculado previamente, intentar reanudar la sesión silenciosamente
+        if (googleLinked) {
+            autoInitIfLinked(true).catch((err) => console.warn('[SyncManager] Auto-init sesion falló:', err))
         }
     },
 

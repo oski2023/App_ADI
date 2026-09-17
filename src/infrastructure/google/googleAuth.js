@@ -20,6 +20,17 @@ const loadScript = (src) => new Promise((resolve, reject) => {
     document.head.appendChild(script)
 })
 
+// Inyectar el token de acceso recibido de GIS directamente en gapi.client
+function setGapiToken(response) {
+    if (!response || response.error) return
+    if (typeof gapi !== 'undefined' && gapi.client && response.access_token) {
+        gapi.client.setToken({
+            access_token: response.access_token,
+        })
+        console.log('[GoogleAuth] Token inyectado en gapi.client correctamente')
+    }
+}
+
 // Programar una renovación silenciosa del token antes de que venza
 function scheduleAutoRefresh(expiresInSeconds) {
     if (refreshTimerId) clearTimeout(refreshTimerId)
@@ -39,6 +50,7 @@ export function silentRefresh() {
     return new Promise((resolve, reject) => {
         tokenClient.callback = (response) => {
             if (response.error) return reject(response)
+            setGapiToken(response)
             console.log('[GoogleAuth] Token renovado en segundo plano')
             scheduleAutoRefresh(response.expires_in || 3600)
             resolve(response)
@@ -87,7 +99,7 @@ export async function initGoogleAuth() {
             scope: GOOGLE_CONFIG.SCOPES,
             callback: (response) => {
                 if (response.error) throw response
-                // El token se guarda automáticamente en gapi.client
+                setGapiToken(response)
             },
         })
 
@@ -107,6 +119,7 @@ export function reconnectGoogle() {
     return new Promise((resolve, reject) => {
         tokenClient.callback = (response) => {
             if (!response.error) {
+                setGapiToken(response)
                 console.log('[GoogleAuth] Reconectado correctamente')
                 scheduleAutoRefresh(response.expires_in || 3600)
                 return resolve(response)
@@ -114,6 +127,7 @@ export function reconnectGoogle() {
             // El intento silencioso falló, reintentar mostrando el consentimiento
             tokenClient.callback = (response2) => {
                 if (response2.error) return reject(response2)
+                setGapiToken(response2)
                 console.log('[GoogleAuth] Reconectado correctamente (con consentimiento)')
                 scheduleAutoRefresh(response2.expires_in || 3600)
                 resolve(response2)
@@ -132,6 +146,7 @@ export async function signIn() {
         try {
             tokenClient.callback = async (response) => {
                 if (response.error) return reject(response)
+                setGapiToken(response)
 
                 // Una vez obtenido el token, podemos obtener la info básica del usuario
                 // Usamos la API de People o simplemente un fetch ligero
