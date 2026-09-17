@@ -1,7 +1,8 @@
-// Autenticación Google OAuth 2.0 (Google Identity Services + GAPI Client)
+// Stub de autenticación Google OAuth 2.0
+// En producción: cargar gapi.client e inicializar OAuth
+// Actualmente: simula el flujo completo para desarrollo local
+
 import { GOOGLE_CONFIG, isGoogleConfigured } from './googleConfig'
-import useSettingsStore from '../../core/stores/useSettingsStore'
-import useAuthStore from '../../core/stores/useAuthStore'
 
 let isInitialized = false
 let currentUser = null
@@ -10,9 +11,6 @@ let refreshTimerId = null
 
 // Cargar scripts de Google dinámicamente
 const loadScript = (src) => new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-        return resolve()
-    }
     const script = document.createElement('script')
     script.src = src
     script.async = true
@@ -34,79 +32,46 @@ function scheduleAutoRefresh(expiresInSeconds) {
     }, delayMs)
 }
 
-// Inyectar el token recibido de GIS directamente en gapi.client y poblar datos de usuario
-async function applyToken(response) {
-    if (!response || response.error) return
-
-    // 1. Inyectar el token en GAPI Client para que Sheets y Drive queden autenticados
-    if (typeof gapi !== 'undefined' && gapi.client && response.access_token) {
-        gapi.client.setToken({
-            access_token: response.access_token,
-        })
-    }
-
-    // 2. Programar renovación
-    if (response.expires_in) {
-        scheduleAutoRefresh(response.expires_in)
-    }
-
-    // 3. Poblar info del usuario si aún no está en memoria
-    if (!currentUser && response.access_token) {
-        try {
-            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${response.access_token}` },
-            })
-            if (res.ok) {
-                const data = await res.json()
-                currentUser = {
-                    id: data.sub,
-                    name: data.name,
-                    email: data.email,
-                    imageUrl: data.picture,
-                }
-                // Sincronizar con AuthStore para mantener coherencia en la UI
-                useAuthStore.getState().setUser({
-                    name: data.name,
-                    email: data.email,
-                    imageUrl: data.picture,
-                    role: 'Docente',
-                })
-            }
-        } catch (e) {
-            console.warn('[GoogleAuth] No se pudo cargar userinfo:', e)
-        }
-    }
-}
-
-// Pedir un token nuevo SIN mostrar popup (funciona si la sesión de Google sigue activa en el navegador)
+// Pedir un token nuevo SIN mostrar popup (funciona si la sesión de Google sigue activa)
 export function silentRefresh() {
     if (!tokenClient) return Promise.reject(new Error('Google Auth no inicializado'))
 
     return new Promise((resolve, reject) => {
-        tokenClient.callback = async (response) => {
+        tokenClient.callback = (response) => {
             if (response.error) return reject(response)
-            await applyToken(response)
-            console.log('[GoogleAuth] Token renovado en segundo plano con éxito')
+            console.log('[GoogleAuth] Token renovado en segundo plano')
+            scheduleAutoRefresh(response.expires_in || 3600)
             resolve(response)
         }
         tokenClient.requestAccessToken({ prompt: '' })
     })
 }
 
-// Inicializar los clientes GAPI y GIS
+// Si ya estuviste vinculado antes, intenta renovar la sesión solo, sin pedir nada al usuario
+export async function autoInitIfLinked(wasLinked) {
+    if (!wasLinked || !isGoogleConfigured()) return false
+    try {
+        if (!isInitialized) await initGoogleAuth()
+        await silentRefresh()
+        return true
+    } catch (error) {
+        console.warn('[GoogleAuth] No se pudo renovar la sesión automáticamente, hará falta volver a vincular manualmente.')
+        return false
+    }
+}
+
+// Inicializar el cliente Google Real
 export async function initGoogleAuth() {
     if (!isGoogleConfigured()) {
         console.warn('[GoogleAuth] Credenciales no detectadas en .env.local')
         return false
     }
 
-    if (isInitialized) return true
-
     try {
-        // 1. Cargar GAPI (para Sheets y Drive) y GIS (para OAuth)
+        // 1. Cargar GAPI (para Sheets y Calendar) y GIS (para Auth)
         await Promise.all([
             loadScript('https://apis.google.com/js/api.js'),
-            loadScript('https://accounts.google.com/gsi/client'),
+            loadScript('https://accounts.google.com/gsi/client')
         ])
 
         // 2. Inicializar GAPI Client
@@ -122,7 +87,7 @@ export async function initGoogleAuth() {
             scope: GOOGLE_CONFIG.SCOPES,
             callback: (response) => {
                 if (response.error) throw response
-                applyToken(response)
+                // El token se guarda automáticamente en gapi.client
             },
         })
 
@@ -130,27 +95,27 @@ export async function initGoogleAuth() {
         console.log('[GoogleAuth] SDKs de Google inicializados correctamente')
         return true
     } catch (error) {
-        console.error('[GoogleAuth] Error al inicializar SDKs:', error)
+        console.error('[GoogleAuth] Error al inicializar:', error)
         return false
     }
 }
 
-// Reconectar con un clic real del usuario: intenta silencioso primero, y si Google lo pide, muestra el popup de consentimiento
+// Reconectar con un clic real del usuario: intenta silencioso primero, y si Google lo pide, muestra el consentimiento
 export function reconnectGoogle() {
     if (!tokenClient) return Promise.reject(new Error('Google Auth no inicializado'))
 
     return new Promise((resolve, reject) => {
-        tokenClient.callback = async (response) => {
+        tokenClient.callback = (response) => {
             if (!response.error) {
-                await applyToken(response)
                 console.log('[GoogleAuth] Reconectado correctamente')
+                scheduleAutoRefresh(response.expires_in || 3600)
                 return resolve(response)
             }
             // El intento silencioso falló, reintentar mostrando el consentimiento
-            tokenClient.callback = async (response2) => {
+            tokenClient.callback = (response2) => {
                 if (response2.error) return reject(response2)
-                await applyToken(response2)
                 console.log('[GoogleAuth] Reconectado correctamente (con consentimiento)')
+                scheduleAutoRefresh(response2.expires_in || 3600)
                 resolve(response2)
             }
             tokenClient.requestAccessToken({ prompt: 'consent' })
@@ -159,7 +124,7 @@ export function reconnectGoogle() {
     })
 }
 
-// Iniciar sesión interactiva con Google
+// Iniciar sesión con Google (Real)
 export async function signIn() {
     if (!isInitialized) await initGoogleAuth()
 
@@ -167,8 +132,23 @@ export async function signIn() {
         try {
             tokenClient.callback = async (response) => {
                 if (response.error) return reject(response)
-                await applyToken(response)
-                console.log('[GoogleAuth] Sesión iniciada para:', currentUser?.email)
+
+                // Una vez obtenido el token, podemos obtener la info básica del usuario
+                // Usamos la API de People o simplemente un fetch ligero
+                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                    headers: { Authorization: `Bearer ${response.access_token}` }
+                })
+                const data = await res.json()
+
+                currentUser = {
+                    id: data.sub,
+                    name: data.name,
+                    email: data.email,
+                    imageUrl: data.picture,
+                }
+
+                console.log('[GoogleAuth] Sesión iniciada para:', currentUser.email)
+                scheduleAutoRefresh(response.expires_in || 3600)
                 resolve(currentUser)
             }
 
@@ -180,55 +160,19 @@ export async function signIn() {
     })
 }
 
-// Cerrar sesión
+// Cerrar sesión (Real)
 export async function signOut() {
     if (refreshTimerId) {
         clearTimeout(refreshTimerId)
         refreshTimerId = null
     }
-    if (typeof gapi !== 'undefined' && gapi.client && gapi.client.getToken() !== null) {
-        try {
-            const token = gapi.client.getToken()
-            if (token && token.access_token && typeof google !== 'undefined' && google.accounts?.oauth2) {
-                google.accounts.oauth2.revoke(token.access_token, () => {
-                    console.log('[GoogleAuth] Token revocado correctamente')
-                })
-            }
-        } catch (e) {
-            console.warn('[GoogleAuth] Error al revocar token:', e)
-        }
+    if (gapi.client.getToken() !== null) {
+        google.accounts.oauth2.revoke(gapi.client.getToken().access_token, () => {
+            console.log('[GoogleAuth] Token revocado correctamente')
+        })
         gapi.client.setToken('')
     }
     currentUser = null
-}
-
-// Verificar si existe un token de acceso activo y no vacío en GAPI
-export function hasActiveToken() {
-    if (typeof gapi === 'undefined' || !gapi.client) return false
-    const token = gapi.client.getToken()
-    return !!(token && token.access_token)
-}
-
-// Garantizar que haya una sesión activa: si no hay token pero el usuario estaba vinculado, restaura silenciosamente
-export async function ensureActiveSession() {
-    if (!isGoogleConfigured()) return false
-    if (!isInitialized) {
-        const ok = await initGoogleAuth()
-        if (!ok) return false
-    }
-
-    if (hasActiveToken()) return true
-
-    const wasLinked = useSettingsStore.getState().googleLinked || !!useAuthStore.getState().user?.email
-    if (!wasLinked) return false
-
-    try {
-        await silentRefresh()
-        return hasActiveToken()
-    } catch (err) {
-        console.warn('[GoogleAuth] No se pudo renovar silenciosamente la sesión:', err)
-        return false
-    }
 }
 
 // Obtener usuario actual
@@ -238,13 +182,12 @@ export function getCurrentUser() {
 
 // Verificar si está autenticado
 export function isSignedIn() {
-    return hasActiveToken() || currentUser !== null
+    return currentUser !== null
 }
 
-// Obtener token de acceso
+// Obtener token de acceso (stub)
 export function getAccessToken() {
-    if (typeof gapi !== 'undefined' && gapi.client) {
-        return gapi.client.getToken()?.access_token || null
-    }
+    if (!isGoogleConfigured()) return null
+    // En producción: gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token
     return null
 }

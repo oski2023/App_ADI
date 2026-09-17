@@ -2,13 +2,11 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Link2, ExternalLink, Trash2, CloudDownload } from 'lucide-react'
+import { Link2, ExternalLink, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isGoogleConfigured } from '../../infrastructure/google/googleConfig'
-import { pushConfigToCloud, syncCloudConfig } from '../../infrastructure/google/cloudConfigService'
-import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 
 const DOCS = [
     { key: 'course', label: 'Ficha de Curso' },
@@ -24,7 +22,6 @@ export default function FPGoogleLinksSection() {
 
     const [inputs, setInputs] = useState({})
     const [loadingKey, setLoadingKey] = useState(null)
-    const [syncingCloud, setSyncingCloud] = useState(false)
 
     const handleLink = async (key, label) => {
         if (!isGoogleConfigured()) {
@@ -41,8 +38,6 @@ export default function FPGoogleLinksSection() {
             const result = await linkFPDocument(value)
             setLink(key, result)
             toast.success(`"${label}" vinculado correctamente`)
-            // Auto-guardar configuración en Google Drive para compartir con el celular
-            pushConfigToCloud()
         } catch (error) {
             toast.error(`No se pudo vincular "${label}"`)
         } finally {
@@ -50,57 +45,15 @@ export default function FPGoogleLinksSection() {
         }
     }
 
-    const handleClearLink = (key) => {
-        clearLink(key)
-        setTimeout(() => pushConfigToCloud(), 100)
-    }
-
-    const handlePullCloud = async () => {
-        if (!isGoogleConfigured()) {
-            toast.error('Primero vinculá tu cuenta de Google')
-            return
-        }
-        setSyncingCloud(true)
-        try {
-            const cfg = await syncCloudConfig()
-            if (cfg?.fp_links && Object.keys(cfg.fp_links).length > 0) {
-                toast.success('Enlaces sincronizados desde tu Google Drive')
-            } else {
-                toast('No se encontraron enlaces guardados en tu Google Drive')
-            }
-        } catch (error) {
-            if (isAuthError(error)) {
-                notifyAuthExpired(handlePullCloud)
-            } else {
-                toast.error('Error al sincronizar enlaces desde Drive')
-            }
-        } finally {
-            setSyncingCloud(false)
-        }
-    }
-
     return (
         <Card className="lg:col-span-2">
-            <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Link2 className="w-4 h-4 text-primary" />
-                    <h2 className="text-base font-semibold text-text-primary">Archivos de Google Sheets — Formación Profesional</h2>
-                </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    icon={CloudDownload}
-                    loading={syncingCloud}
-                    disabled={syncingCloud}
-                    onClick={handlePullCloud}
-                    title="Buscar enlaces guardados en tu Google Drive"
-                >
-                    Recuperar de Drive
-                </Button>
+            <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-primary" />
+                <h2 className="text-base font-semibold text-text-primary">Archivos de Google Sheets — Formación Profesional</h2>
             </div>
             <CardBody className="space-y-5">
                 <p className="text-sm text-text-secondary">
-                    Pegá el link de cada archivo que te comparten (ya convertido a Google Sheets nativo). Se guardan automáticamente en tu Google Drive para que aparezcan en tu celular sin tener que volver a pegarlos.
+                    Pegá el link de cada archivo que te comparten (ya convertido a Google Sheets nativo).
                 </p>
                 {DOCS.map((doc) => {
                     const linked = links[doc.key]
@@ -126,7 +79,7 @@ export default function FPGoogleLinksSection() {
                                         variant="ghost"
                                         size="sm"
                                         icon={Trash2}
-                                        onClick={() => handleClearLink(doc.key)}
+                                        onClick={() => clearLink(doc.key)}
                                     >
                                         Desvincular
                                     </Button>

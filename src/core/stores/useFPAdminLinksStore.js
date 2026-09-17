@@ -11,10 +11,6 @@ const useFPAdminLinksStore = create(
                 links: { ...state.links, [tipo]: data },
             })),
 
-            setAllLinks: (newLinks) => set((state) => ({
-                links: { ...state.links, ...newLinks },
-            })),
-
             clearLink: (tipo) => set((state) => {
                 const links = { ...state.links }
                 delete links[tipo]

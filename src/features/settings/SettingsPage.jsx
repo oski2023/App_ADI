@@ -11,7 +11,6 @@ import toast from 'react-hot-toast'
 import { signIn, signOut } from '../../infrastructure/google/googleAuth'
 import { createSpreadsheet, linkExistingSpreadsheet } from '../../infrastructure/google/sheetsService'
 import useSyncStore from '../../infrastructure/google/syncManager'
-import { syncCloudConfig, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
 import FPGoogleLinksSection from './FPGoogleLinksSection'
 
 export default function SettingsPage() {
@@ -39,10 +38,6 @@ export default function SettingsPage() {
             })
         }
 
-        if (googleLinked) {
-            pushConfigToCloud().catch(err => console.error(err))
-        }
-
         toast.success('Configuración y perfil guardados exitosamente')
     }
 
@@ -62,13 +57,7 @@ export default function SettingsPage() {
                     role: 'Docente'
                 })
 
-                // 1. Intentar recuperar configuración previa desde Google Drive (útil entre PC y celular)
-                toast.loading('Buscando configuración previa en tu Google Drive...', { id: 'g-sync' })
-                const cloudConfig = await syncCloudConfig()
-
-                if (cloudConfig?.main_spreadsheet_url) {
-                    toast.success('¡Configuración y planillas recuperadas de tu Google Drive!', { id: 'g-sync' })
-                } else if (linkMode === 'existing') {
+                    if (linkMode === 'existing') {
                     if (!existingSheetInput.trim()) {
                         toast.error('Pegá el link o ID de tu hoja de Google Sheets')
                         setIsLinking(false)
@@ -78,7 +67,6 @@ export default function SettingsPage() {
                     const sheet = await linkExistingSpreadsheet(existingSheetInput)
 
                     setGoogleLinked(true, sheet.spreadsheetUrl)
-                    await pushConfigToCloud()
                     toast.success(
                         sheet.missingTitles.length > 0
                             ? `¡Vinculada! Se agregaron las pestañas faltantes: ${sheet.missingTitles.join(', ')}`
@@ -91,7 +79,6 @@ export default function SettingsPage() {
                     const sheet = await createSpreadsheet()
 
                     setGoogleLinked(true, sheet.spreadsheetUrl)
-                    await pushConfigToCloud()
                     toast.success('¡App vinculada y base de datos creada!', { id: 'g-sync' })
                 }
 
@@ -292,47 +279,25 @@ export default function SettingsPage() {
                             <Badge variant={googleLinked ? 'success' : 'neutral'} dot>{googleLinked ? 'Conectado' : 'Desconectado'}</Badge>
                         </div>
                         {googleLinked ? (
-                            <div className="space-y-2">
-                                <div className="flex gap-2">
-                                    <Button
-                                        variant="primary"
-                                        onClick={() => window.open(spreadsheetUrl, '_blank')}
-                                        className="flex-1 justify-center bg-success hover:bg-success/90 border-0"
-                                    >
-                                        Ver en Drive
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        onClick={handleGoogleConnection}
-                                        loading={isLinking}
-                                        disabled={isLinking}
-                                        className="flex-1 justify-center !border-error text-error hover:!bg-error hover:text-white"
-                                    >
-                                        Desvincular
-                                    </Button>
-                                </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="primary"
+                                    onClick={() => window.open(spreadsheetUrl, '_blank')}
+                                    className="flex-1 justify-center bg-success hover:bg-success/90 border-0"
+                                >
+                                    Ver en Drive
+                                </Button>
                                 <Button
                                     variant="outline"
-                                    size="sm"
-                                    onClick={async () => {
-                                        toast.loading('Sincronizando enlaces con Google Drive...', { id: 'cloud-sync' })
-                                        try {
-                                            const res = await syncCloudConfig()
-                                            if (res) {
-                                                toast.success('Enlaces sincronizados desde Google Drive', { id: 'cloud-sync' })
-                                            } else {
-                                                toast.error('No se pudieron recuperar enlaces de Drive', { id: 'cloud-sync' })
-                                            }
-                                        } catch (e) {
-                                            toast.error('Error al sincronizar con Google Drive', { id: 'cloud-sync' })
-                                        }
-                                    }}
-                                    className="w-full justify-center text-xs"
+                                    onClick={handleGoogleConnection}
+                                    loading={isLinking}
+                                    disabled={isLinking}
+                                    className="flex-1 justify-center !border-error text-error hover:!bg-error hover:text-white"
                                 >
-                                    Sincronizar enlaces desde Drive
+                                    Desvincular
                                 </Button>
                             </div>
-                        ) : (
+                                                ) : (
                             <div className="space-y-3">
                                 <div className="flex gap-4 text-sm text-text-primary">
                                     <label className="flex items-center gap-2 cursor-pointer">

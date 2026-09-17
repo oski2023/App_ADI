@@ -16,10 +16,6 @@ const useFPGoogleLinksStore = create(
                 links: { ...state.links, [key]: data },
             })),
 
-            setAllLinks: (newLinks) => set((state) => ({
-                links: { ...state.links, ...newLinks },
-            })),
-
             clearLink: (key) => set((state) => ({
                 links: { ...state.links, [key]: null },
             })),
