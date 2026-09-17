@@ -4,11 +4,12 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import {
     ChevronDown, ChevronRight, Pencil, X, RefreshCw, Briefcase,
-    Sliders, ExternalLink, Trash2, Plus, Check
+    Sliders, ExternalLink, Trash2, Plus, Check, Download
 } from 'lucide-react'
 import useFPAdminRecordsStore from '../../core/stores/useFPAdminRecordsStore'
 import useFPAdminLinksStore from '../../core/stores/useFPAdminLinksStore'
-import { syncFPAdminRecords, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { syncFPAdminRecords, linkFPDocument, readFPRows, extractSpreadsheetId } from '../../infrastructure/google/sheetsService'
+import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { isGoogleConfigured } from '../../infrastructure/google/googleConfig'
 import toast from 'react-hot-toast'
 
@@ -24,6 +25,7 @@ function EstadoBadge({ estado }) {
 
 export default function FPAdminPage() {
     const records = useFPAdminRecordsStore((s) => s.records)
+    const setRecords = useFPAdminRecordsStore((s) => s.setRecords)
     const addRecord = useFPAdminRecordsStore((s) => s.addRecord)
     const updateRecord = useFPAdminRecordsStore((s) => s.updateRecord)
     const deleteRecord = useFPAdminRecordsStore((s) => s.deleteRecord)
@@ -32,6 +34,7 @@ export default function FPAdminPage() {
     const setLink = useFPAdminLinksStore((s) => s.setLink)
     const clearLink = useFPAdminLinksStore((s) => s.clearLink)
     const tipos = Object.keys(links)
+    const mainDocLinks = useFPGoogleLinksStore((s) => s.links)
 
     const [filtroEstado, setFiltroEstado] = useState('todos')
     const [expanded, setExpanded] = useState({})
@@ -39,7 +42,43 @@ export default function FPAdminPage() {
     const [editDraft, setEditDraft] = useState({})
     const [draftByMonth, setDraftByMonth] = useState({})
     const [newMonthDraft, setNewMonthDraft] = useState({ mes: '', documento: '', cohorte: 'Sin cohorte', cantidad: '', link: '' })
-    const [syncing, setSyncing] = useState(false)
+        const [syncing, setSyncing] = useState(false)
+    const [loading, setLoading] = useState(false)
+
+    const handleLoadFromSheets = async () => {
+        if (tipos.length === 0) {
+            toast.error('Primero vinculá al menos un tipo de documento')
+            return
+        }
+        if (!window.confirm('Esto va a reemplazar los registros que tenés cargados en este dispositivo por los que están en Google Sheets. ¿Continuar?')) {
+            return
+        }
+        setLoading(true)
+        try {
+            let allRecords = []
+            for (const tipo of tipos) {
+                const rows = await readFPRows(links[tipo].spreadsheetId, links[tipo].sheetTitle, 'A2:G')
+                const parsed = rows
+                    .filter((row) => row[0])
+                    .map((row) => ({
+                        id: row[0],
+                        mes: row[1] || '',
+                        documento: row[2] || tipo,
+                        cohorte: row[3] || 'Sin cohorte',
+                        cantidad: row[4] || '',
+                        estado: row[5] || 'Pendiente',
+                        link: row[6] || '',
+                    }))
+                allRecords = [...allRecords, ...parsed]
+            }
+            setRecords(allRecords)
+            toast.success(`${allRecords.length} registros traídos desde Google Sheets`)
+        } catch (error) {
+            toast.error('Error al traer los datos desde Google Sheets')
+        } finally {
+            setLoading(false)
+        }
+    }
     const [mostrarTipos, setMostrarTipos] = useState(false)
     const [nuevoTipo, setNuevoTipo] = useState('')
     const [nuevoTipoLink, setNuevoTipoLink] = useState('')
@@ -128,6 +167,8 @@ export default function FPAdminPage() {
         }
     }
 
+        const MAIN_DOC_LABELS = { course: 'Ficha de Curso', topicAttendance: 'Tema y Asistencia', attendanceSheet: 'Asistencia de Alumnos', examAct: 'Acta de Examen' }
+
     const handleVincularTipo = async () => {
         if (!isGoogleConfigured()) {
             toast.error('Primero vinculá tu cuenta de Google (Configuración)')
@@ -137,6 +178,24 @@ export default function FPAdminPage() {
             toast.error('Completá el nombre y el link')
             return
         }
+
+        const idNuevo = extractSpreadsheetId(nuevoTipoLink)
+
+        // Chequear contra los 4 documentos principales
+        for (const [key, label] of Object.entries(MAIN_DOC_LABELS)) {
+            if (mainDocLinks[key] && mainDocLinks[key].spreadsheetId === idNuevo) {
+                toast.error(`Ese archivo ya está en uso por "${label}". Usá un archivo distinto y dedicado para Administrativo.`)
+                return
+            }
+        }
+        // Chequear contra otros tipos de Administrativo ya vinculados
+        for (const t of tipos) {
+            if (links[t].spreadsheetId === idNuevo) {
+                toast.error(`Ese archivo ya está vinculado al tipo "${t}". Usá un archivo distinto.`)
+                return
+            }
+        }
+
         setVinculando(true)
         try {
             const result = await linkFPDocument(nuevoTipoLink)
@@ -193,6 +252,9 @@ export default function FPAdminPage() {
                     Tipos de documento
                 </Button>
                 <div className="flex-1" />
+                <Button variant="outline" icon={Download} loading={loading} disabled={loading} onClick={handleLoadFromSheets}>
+                    Actualizar desde Sheets
+                </Button>
                 <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
                     Sincronizar con Sheets
                 </Button>

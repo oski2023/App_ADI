@@ -16,7 +16,9 @@ const emptyRecord = (data = {}) => ({
 const useFPAdminRecordsStore = create(
     persist(
         (set, get) => ({
-            records: [],
+                        records: [],
+
+            setRecords: (records) => set({ records }),
 
             addRecord: (data) => {
                 const record = emptyRecord(data)

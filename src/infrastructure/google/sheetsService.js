@@ -464,6 +464,22 @@ export async function syncFPExamActSheet(spreadsheetId, sheetTitle, act) {
     }
 }
 
+// Leer filas crudas de un documento FP vinculado (para traer datos de vuelta hacia la app)
+export async function readFPRows(spreadsheetId, sheetTitle, range = 'A2:Z') {
+    if (!isGoogleConfigured() || !spreadsheetId) return []
+
+    try {
+        const response = await gapi.client.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetTitle}!${range}`,
+        })
+        return response.result.values || []
+    } catch (error) {
+        console.error('[SheetsService] Error al leer filas de documento FP:', error)
+        return []
+    }
+}
+
 // Sincronizar el Registro Administrativo (papeles entregados) — limpia y vuelve a cargar todas las filas
 export async function syncFPAdminRecords(spreadsheetId, sheetTitle, records) {
     if (!isGoogleConfigured() || !spreadsheetId) return false
