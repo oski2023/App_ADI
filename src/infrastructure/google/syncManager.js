@@ -4,6 +4,7 @@
 import { create } from 'zustand'
 import { setSpreadsheetId, syncStudents, syncAttendance, syncGrades, syncTopicBook, syncCalendarEvents } from './sheetsService'
 import { initGoogleAuth, isSignedIn } from './googleAuth'
+import { pullConfigFromCloud } from './cloudConfigService'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import useStudentStore from '../../core/stores/useStudentStore'
 import useAttendanceStore from '../../core/stores/useAttendanceStore'
@@ -38,6 +39,11 @@ export const useSyncStore = create((set, get) => ({
         if (spreadsheetUrl) {
             const id = spreadsheetUrl.split('/d/')[1]?.split('/')[0]
             if (id) setSpreadsheetId(id)
+        }
+
+        // Si el usuario ya está autenticado con Google, hidratar enlaces desde Google Drive
+        if (isSignedIn()) {
+            pullConfigFromCloud().catch((err) => console.error('[SyncManager] Error auto-pulling config:', err))
         }
     },
 

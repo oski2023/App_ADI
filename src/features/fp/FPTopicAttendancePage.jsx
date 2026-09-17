@@ -7,6 +7,7 @@ import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw, CloudDownload, Link2 }
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { pullConfigFromCloud, pushConfigToCloud } from '../../infrastructure/google/cloudConfigService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -85,15 +86,24 @@ export default function FPTopicAttendancePage() {
         }
     }
 
-    const handlePullFromSheets = (targetSheetId = null) => {
-        if (!topicLink) {
-            setShowLinkModal(true)
-            return
+    const handlePullFromSheets = async (targetSheetId = null) => {
+        let activeLink = topicLink
+        if (!activeLink) {
+            toast.loading('Buscando enlace en tu Google Drive...', { id: 'cloud-cfg' })
+            const cloudCfg = await pullConfigFromCloud()
+            if (cloudCfg?.fp_links?.topicAttendance) {
+                activeLink = cloudCfg.fp_links.topicAttendance
+                toast.success('¡Enlace detectado automáticamente desde Google Drive!', { id: 'cloud-cfg' })
+            } else {
+                toast.dismiss('cloud-cfg')
+                setShowLinkModal(true)
+                return
+            }
         }
         if (!window.confirm('Esto va a traer los datos desde Google Sheets y actualizará tu copia en este dispositivo. ¿Continuar?')) {
             return
         }
-        executePull(topicLink.spreadsheetId, topicLink.sheetTitle, targetSheetId)
+        executePull(activeLink.spreadsheetId, activeLink.sheetTitle, targetSheetId)
     }
 
     const handleLinkAndPull = async () => {
@@ -105,6 +115,8 @@ export default function FPTopicAttendancePage() {
         try {
             const result = await linkFPDocument(linkInput.trim())
             setLink('topicAttendance', result)
+            // Guardar en Google Drive para que esté disponible en otros dispositivos
+            pushConfigToCloud()
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')
