@@ -263,6 +263,13 @@ export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
             Object.entries(FP_COURSE_STUDENT_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, s[field]))
         })
 
+        // Limpiar filas sobrantes de alumnos si se eliminaron alumnos
+        for (let idx = course.students.length; idx < 35; idx++) {
+            const row = FP_COURSE_STUDENT_START_ROW + idx
+            pushCell(`A${row}`, '')
+            Object.values(FP_COURSE_STUDENT_COLUMNS).forEach((col) => pushCell(`${col}${row}`, ''))
+        }
+
         await gapi.client.sheets.spreadsheets.values.batchUpdate({
             spreadsheetId,
             resource: { valueInputOption: 'RAW', data },
@@ -271,6 +278,36 @@ export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
         return true
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Ficha de Curso:', error)
+        throw error
+    }
+}
+
+// Limpiar Ficha de Curso en Google Sheets (cuando se elimina el curso)
+export async function clearFPCourseSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.values(FP_COURSE_CELL_MAP).forEach((cell) => pushCell(cell, ''))
+        Object.values(FP_COURSE_HORARIO_CELLS).forEach((cell) => pushCell(cell, ''))
+        Object.values(FP_COURSE_MATRICULA_CELLS).forEach((cell) => pushCell(cell, ''))
+
+        for (let idx = 0; idx < 35; idx++) {
+            const row = FP_COURSE_STUDENT_START_ROW + idx
+            pushCell(`A${row}`, '')
+            Object.values(FP_COURSE_STUDENT_COLUMNS).forEach((col) => pushCell(`${col}${row}`, ''))
+        }
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al limpiar Ficha de Curso:', error)
         throw error
     }
 }
@@ -313,6 +350,12 @@ export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, shee
             Object.entries(FP_TOPIC_ENTRY_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, e[field]))
         })
 
+        // Limpiar filas sobrantes de clases si se eliminaron entradas
+        for (let idx = sheet.entries.length; idx < 30; idx++) {
+            const row = FP_TOPIC_START_ROW + idx
+            Object.values(FP_TOPIC_ENTRY_COLUMNS).forEach((col) => pushCell(`${col}${row}`, ''))
+        }
+
         await gapi.client.sheets.spreadsheets.values.batchUpdate({
             spreadsheetId,
             resource: { valueInputOption: 'RAW', data },
@@ -321,6 +364,34 @@ export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, shee
         return true
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Tema y Asistencia:', error)
+        throw error
+    }
+}
+
+// Limpiar Tema y Asistencia en Google Sheets (cuando se elimina la planilla)
+export async function clearFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.values(FP_TOPIC_CELL_MAP).forEach((cell) => pushCell(cell, ''))
+        Object.values(FP_TOPIC_HORARIO_CELLS).forEach((cell) => pushCell(cell, ''))
+
+        for (let idx = 0; idx < 30; idx++) {
+            const row = FP_TOPIC_START_ROW + idx
+            Object.values(FP_TOPIC_ENTRY_COLUMNS).forEach((col) => pushCell(`${col}${row}`, ''))
+        }
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al limpiar Tema y Asistencia:', error)
         throw error
     }
 }
@@ -462,11 +533,32 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
             pushCell(`AM${row}`, st.temasTratados)
         })
 
+        // Limpiar filas sobrantes de alumnos (hasta fila 20) si se eliminaron alumnos
+        for (let idx = sheet.students.length; idx < 10; idx++) {
+            const row = FP_ATTENDANCE_STUDENT_START_ROW + idx
+            pushCell(`B${row}`, '')
+            pushCell(`C${row}`, '')
+            for (let d = 1; d <= 31; d++) {
+                const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
+                pushCell(`${colLetter}${row}`, '')
+            }
+            pushCell(`AK${row}`, '')
+            pushCell(`AL${row}`, '')
+            pushCell(`AM${row}`, '')
+        }
+
         sheet.bajas.forEach((b, idx) => {
             const row = FP_ATTENDANCE_BAJA_START_ROW + idx
             pushCell(`AM${row}`, b.sexo)
             pushCell(`AN${row}`, b.apellidosNombres)
         })
+
+        // Limpiar filas sobrantes de bajas (filas 21 a 27) si se eliminaron bajas
+        for (let idx = sheet.bajas.length; idx < 7; idx++) {
+            const row = FP_ATTENDANCE_BAJA_START_ROW + idx
+            pushCell(`AM${row}`, '')
+            pushCell(`AN${row}`, '')
+        }
 
         Object.entries(FP_ATTENDANCE_MOVIMIENTO_CELLS).forEach(([campo, cell]) => pushCell(cell, sheet.movimiento[campo]))
 
@@ -478,6 +570,47 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
         return true
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
+        throw error
+    }
+}
+
+// Limpiar Asistencia de Alumnos en Google Sheets (cuando se elimina la planilla)
+export async function clearFPAttendanceSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
+
+    try {
+        const data = []
+        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+
+        Object.values(FP_ATTENDANCE_CELL_MAP).forEach((cell) => pushCell(cell, ''))
+        Object.values(FP_ATTENDANCE_HORARIO_CELLS).forEach((cell) => pushCell(cell, ''))
+        Object.values(FP_ATTENDANCE_MOVIMIENTO_CELLS).forEach((cell) => pushCell(cell, ''))
+
+        for (let row = FP_ATTENDANCE_STUDENT_START_ROW; row < FP_ATTENDANCE_BAJA_START_ROW; row++) {
+            pushCell(`B${row}`, '')
+            pushCell(`C${row}`, '')
+            for (let d = 1; d <= 31; d++) {
+                const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
+                pushCell(`${colLetter}${row}`, '')
+            }
+            pushCell(`AK${row}`, '')
+            pushCell(`AL${row}`, '')
+            pushCell(`AM${row}`, '')
+        }
+
+        for (let row = FP_ATTENDANCE_BAJA_START_ROW; row <= 27; row++) {
+            pushCell(`AM${row}`, '')
+            pushCell(`AN${row}`, '')
+        }
+
+        await gapi.client.sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            resource: { valueInputOption: 'RAW', data },
+        })
+
+        return true
+    } catch (error) {
+        console.error('[SheetsService] Error al limpiar Asistencia de Alumnos:', error)
         throw error
     }
 }

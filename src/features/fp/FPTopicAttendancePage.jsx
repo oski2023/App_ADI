@@ -3,10 +3,11 @@ import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
+import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, clearFPTopicAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -41,23 +42,79 @@ export default function FPTopicAttendancePage() {
     const [linkInput, setLinkInput] = useState('')
     const [linking, setLinking] = useState(false)
 
-    const handleSync = async () => {
+    // Estados para confirmación de eliminación y selección de sincronización
+    const [sheetToDelete, setSheetToDelete] = useState(null)
+    const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
+
+    const handleSyncSingle = async (sheetToSync) => {
         if (!topicLink) {
-            toast.error('Primero vinculá el archivo de Tema y Asistencia en Configuración')
+            setShowLinkModal(true)
             return
         }
         setSyncing(true)
         try {
-            await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, selected)
-            toast.success('Sincronizado con Google Sheets')
+            await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, sheetToSync)
+            toast.success(`"${sheetToSync.especialidad || 'Planilla'}" sincronizada con Google Sheets`)
         } catch (error) {
             if (isAuthError(error)) {
-                notifyAuthExpired(handleSync)
+                notifyAuthExpired(() => handleSyncSingle(sheetToSync))
             } else {
                 toast.error('Error al sincronizar con Google Sheets')
             }
         } finally {
             setSyncing(false)
+        }
+    }
+
+    const handleSyncGeneral = async () => {
+        if (!topicLink) {
+            setShowLinkModal(true)
+            return
+        }
+        if (sheets.length === 0) {
+            toast.error('No tenés planillas cargadas para sincronizar')
+            return
+        }
+        if (sheets.length === 1) {
+            await handleSyncSingle(sheets[0])
+            return
+        }
+        setShowSyncSelectModal(true)
+    }
+
+    const handleDeleteClick = (e, sheet) => {
+        e.stopPropagation()
+        setSheetToDelete(sheet)
+    }
+
+    const handleConfirmDelete = async () => {
+        if (!sheetToDelete) return
+        const targetId = sheetToDelete.id
+        const targetName = sheetToDelete.especialidad || 'Planilla'
+        deleteSheet(targetId)
+        setSheetToDelete(null)
+
+        if (topicLink) {
+            const remainingSheets = sheets.filter((s) => s.id !== targetId)
+            setSyncing(true)
+            try {
+                if (remainingSheets.length === 0) {
+                    await clearFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle)
+                    toast.success(`"${targetName}" eliminada y Google Sheets vaciado`)
+                } else {
+                    toast.success(`"${targetName}" eliminada`)
+                }
+            } catch (error) {
+                if (isAuthError(error)) {
+                    notifyAuthExpired(handleConfirmDelete)
+                } else {
+                    toast.error('Se eliminó localmente, pero falló la sincronización con Google Sheets')
+                }
+            } finally {
+                setSyncing(false)
+            }
+        } else {
+            toast.success(`"${targetName}" eliminada`)
         }
     }
 
@@ -137,7 +194,7 @@ export default function FPTopicAttendancePage() {
                         >
                             Cargar de Sheets
                         </Button>
-                        <Button icon={RefreshCw} loading={syncing} disabled={syncing || pulling} onClick={handleSync}>
+                        <Button icon={RefreshCw} loading={syncing} disabled={syncing || pulling} onClick={() => handleSyncSingle(selected)}>
                             Sincronizar con Sheets
                         </Button>
                     </div>
@@ -241,16 +298,25 @@ export default function FPTopicAttendancePage() {
                     <h1 className="text-2xl font-bold text-text-primary">Planillas de Tema y Asistencia</h1>
                     <p className="text-sm text-text-secondary mt-1">Formación Profesional</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <Button
                         variant="outline"
                         icon={CloudDownload}
                         loading={pulling}
-                        disabled={pulling}
+                        disabled={pulling || syncing}
                         onClick={() => handlePullFromSheets(null)}
                         title="Descarga la planilla desde Google Sheets hacia este dispositivo"
                     >
                         Traer de Google Sheets
+                    </Button>
+                    <Button
+                        icon={RefreshCw}
+                        loading={syncing}
+                        disabled={syncing || pulling}
+                        onClick={handleSyncGeneral}
+                        title="Sincroniza los datos con Google Sheets"
+                    >
+                        Sincronizar con Sheets
                     </Button>
                     <Button icon={Plus} onClick={() => setSelectedId(addSheet())}>
                         Nueva Planilla
@@ -276,17 +342,87 @@ export default function FPTopicAttendancePage() {
                                     <p className="text-xs text-text-secondary mt-0.5">Curso Nº {s.cursoNumero || '—'} · {s.mesDe || 'Sin mes'}</p>
                                     <p className="text-xs text-text-muted mt-1">{s.entries.length} clase{s.entries.length !== 1 ? 's' : ''} registrada{s.entries.length !== 1 ? 's' : ''}</p>
                                 </div>
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); deleteSheet(s.id) }}
-                                    className="text-text-muted hover:text-error transition-colors"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleSyncSingle(s)
+                                        }}
+                                        className="p-1.5 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg-hover"
+                                        title="Sincronizar esta planilla con Google Sheets"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => handleDeleteClick(e, s)}
+                                        className="p-1.5 text-text-muted hover:text-error transition-colors rounded-lg hover:bg-bg-hover"
+                                        title="Eliminar planilla"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
                         </CardBody>
                     </Card>
                 ))}
             </div>
+
+            {/* Modal de confirmación al eliminar */}
+            <ConfirmModal
+                isOpen={!!sheetToDelete}
+                onClose={() => setSheetToDelete(null)}
+                onConfirm={handleConfirmDelete}
+                title="¿Eliminar planilla?"
+                description={`¿Estás seguro de que querés eliminar "${sheetToDelete?.especialidad || 'esta planilla'}" (Curso Nº ${sheetToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
+                confirmLabel="Eliminar y Sincronizar"
+            />
+
+            {/* Modal para elegir cuál planilla sincronizar si hay varias */}
+            <Modal
+                isOpen={showSyncSelectModal}
+                onClose={() => setShowSyncSelectModal(false)}
+                title="Sincronizar con Google Sheets"
+            >
+                <div className="space-y-4 p-2">
+                    <p className="text-sm text-text-secondary">
+                        Tenés {sheets.length} planillas cargadas. Seleccioná cuál querés subir a tu hoja vinculada de Google Sheets:
+                    </p>
+                    <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                        {sheets.map((s) => (
+                            <div
+                                key={s.id}
+                                className="flex items-center justify-between p-3 rounded-xl border border-border-light hover:bg-bg-hover transition-colors"
+                            >
+                                <div className="min-w-0 pr-3">
+                                    <p className="font-semibold text-text-primary text-sm truncate">
+                                        {s.especialidad || 'Sin especialidad'}
+                                    </p>
+                                    <p className="text-xs text-text-secondary">
+                                        Curso Nº {s.cursoNumero || '—'} · {s.mesDe || 'Sin mes'} ({s.entries.length} clases)
+                                    </p>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    icon={RefreshCw}
+                                    loading={syncing}
+                                    disabled={syncing}
+                                    onClick={async () => {
+                                        setShowSyncSelectModal(false)
+                                        await handleSyncSingle(s)
+                                    }}
+                                >
+                                    Sincronizar
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end pt-2">
+                        <Button variant="ghost" onClick={() => setShowSyncSelectModal(false)}>
+                            Cerrar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
 
             {/* Modal para vincular la hoja en este dispositivo si todavía no se vinculó */}
             <Modal

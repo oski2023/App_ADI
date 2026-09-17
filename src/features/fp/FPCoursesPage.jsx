@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
+import Modal from '../../shared/components/Modal'
+import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPCourseSheet } from '../../infrastructure/google/sheetsService'
+import { syncFPCourseSheet, clearFPCourseSheet } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -34,23 +36,79 @@ export default function FPCoursesPage() {
     const courseLink = useFPGoogleLinksStore((s) => s.links.course)
     const [syncing, setSyncing] = useState(false)
 
-    const handleSync = async () => {
+    // Estados para confirmación de eliminación y selección de sincronización
+    const [courseToDelete, setCourseToDelete] = useState(null)
+    const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
+
+    const handleSyncSingle = async (courseToSync) => {
         if (!courseLink) {
             toast.error('Primero vinculá el archivo de Ficha de Curso en Configuración')
             return
         }
         setSyncing(true)
         try {
-            await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, selected)
-            toast.success('Sincronizado con Google Sheets')
+            await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, courseToSync)
+            toast.success(`"${courseToSync.especialidad || 'Curso'}" sincronizado con Google Sheets`)
         } catch (error) {
             if (isAuthError(error)) {
-                notifyAuthExpired(handleSync)
+                notifyAuthExpired(() => handleSyncSingle(courseToSync))
             } else {
                 toast.error('Error al sincronizar con Google Sheets')
             }
         } finally {
             setSyncing(false)
+        }
+    }
+
+    const handleSyncGeneral = async () => {
+        if (!courseLink) {
+            toast.error('Primero vinculá el archivo de Ficha de Curso en Configuración')
+            return
+        }
+        if (courses.length === 0) {
+            toast.error('No tenés cursos cargados para sincronizar')
+            return
+        }
+        if (courses.length === 1) {
+            await handleSyncSingle(courses[0])
+            return
+        }
+        setShowSyncSelectModal(true)
+    }
+
+    const handleDeleteClick = (e, course) => {
+        e.stopPropagation()
+        setCourseToDelete(course)
+    }
+
+    const handleConfirmDelete = async () => {
+        if (!courseToDelete) return
+        const targetId = courseToDelete.id
+        const targetName = courseToDelete.especialidad || 'Curso'
+        deleteCourse(targetId)
+        setCourseToDelete(null)
+
+        if (courseLink) {
+            const remainingCourses = courses.filter((c) => c.id !== targetId)
+            setSyncing(true)
+            try {
+                if (remainingCourses.length === 0) {
+                    await clearFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle)
+                    toast.success(`"${targetName}" eliminado y Google Sheets vaciado`)
+                } else {
+                    toast.success(`"${targetName}" eliminado`)
+                }
+            } catch (error) {
+                if (isAuthError(error)) {
+                    notifyAuthExpired(handleConfirmDelete)
+                } else {
+                    toast.error('Se eliminó localmente, pero falló la sincronización con Google Sheets')
+                }
+            } finally {
+                setSyncing(false)
+            }
+        } else {
+            toast.success(`"${targetName}" eliminado`)
         }
     }
 
@@ -64,7 +122,7 @@ export default function FPCoursesPage() {
                     <h1 className="text-xl font-bold text-text-primary flex-1">
                         Ficha de Curso {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
-                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
+                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={() => handleSyncSingle(selected)}>
                         Sincronizar con Sheets
                     </Button>
                 </div>
@@ -183,14 +241,25 @@ export default function FPCoursesPage() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-text-primary">Fichas de Curso</h1>
                     <p className="text-sm text-text-secondary mt-1">Formación Profesional</p>
                 </div>
-                <Button icon={Plus} onClick={() => setSelectedId(addCourse())}>
-                    Nuevo Curso
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                        icon={RefreshCw}
+                        loading={syncing}
+                        disabled={syncing}
+                        onClick={handleSyncGeneral}
+                        title="Sincroniza los datos con Google Sheets"
+                    >
+                        Sincronizar con Sheets
+                    </Button>
+                    <Button icon={Plus} onClick={() => setSelectedId(addCourse())}>
+                        Nuevo Curso
+                    </Button>
+                </div>
             </div>
 
             {courses.length === 0 && (
@@ -211,17 +280,87 @@ export default function FPCoursesPage() {
                                     <p className="text-xs text-text-secondary mt-0.5">Curso Nº {c.cursoNumero || '—'} · C.F.P. Nº {c.cfpNumero || '—'}</p>
                                     <p className="text-xs text-text-muted mt-1">{c.students.length} estudiante{c.students.length !== 1 ? 's' : ''}</p>
                                 </div>
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); deleteCourse(c.id) }}
-                                    className="text-text-muted hover:text-error transition-colors"
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleSyncSingle(c)
+                                        }}
+                                        className="p-1.5 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg-hover"
+                                        title="Sincronizar este curso con Google Sheets"
+                                    >
+                                        <RefreshCw className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => handleDeleteClick(e, c)}
+                                        className="p-1.5 text-text-muted hover:text-error transition-colors rounded-lg hover:bg-bg-hover"
+                                        title="Eliminar curso"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
                         </CardBody>
                     </Card>
                 ))}
             </div>
+
+            {/* Modal de confirmación al eliminar */}
+            <ConfirmModal
+                isOpen={!!courseToDelete}
+                onClose={() => setCourseToDelete(null)}
+                onConfirm={handleConfirmDelete}
+                title="¿Eliminar curso?"
+                description={`¿Estás seguro de que querés eliminar "${courseToDelete?.especialidad || 'este curso'}" (Curso Nº ${courseToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
+                confirmLabel="Eliminar y Sincronizar"
+            />
+
+            {/* Modal para elegir cuál curso sincronizar si hay varios */}
+            <Modal
+                isOpen={showSyncSelectModal}
+                onClose={() => setShowSyncSelectModal(false)}
+                title="Sincronizar con Google Sheets"
+            >
+                <div className="space-y-4 p-2">
+                    <p className="text-sm text-text-secondary">
+                        Tenés {courses.length} cursos cargados. Seleccioná cuál querés subir a tu hoja vinculada de Google Sheets:
+                    </p>
+                    <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                        {courses.map((c) => (
+                            <div
+                                key={c.id}
+                                className="flex items-center justify-between p-3 rounded-xl border border-border-light hover:bg-bg-hover transition-colors"
+                            >
+                                <div className="min-w-0 pr-3">
+                                    <p className="font-semibold text-text-primary text-sm truncate">
+                                        {c.especialidad || 'Sin especialidad'}
+                                    </p>
+                                    <p className="text-xs text-text-secondary">
+                                        Curso Nº {c.cursoNumero || '—'} · C.F.P. Nº {c.cfpNumero || '—'} ({c.students.length} estudiantes)
+                                    </p>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    icon={RefreshCw}
+                                    loading={syncing}
+                                    disabled={syncing}
+                                    onClick={async () => {
+                                        setShowSyncSelectModal(false)
+                                        await handleSyncSingle(c)
+                                    }}
+                                >
+                                    Sincronizar
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex justify-end pt-2">
+                        <Button variant="ghost" onClick={() => setShowSyncSelectModal(false)}>
+                            Cerrar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     )
 }
