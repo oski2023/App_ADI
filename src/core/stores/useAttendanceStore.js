@@ -30,6 +30,19 @@ const useAttendanceStore = create(
                 }
             }),
 
+            // Sincronización bidireccional (PC ↔ Celular):
+            // Fusiona los registros de asistencia traídos de Google Sheets con los que ya existen localmente
+            mergeRecords: (newRecords) => set((state) => {
+                const merged = { ...state.records }
+                Object.entries(newRecords).forEach(([key, dayMap]) => {
+                    merged[key] = {
+                        ...(merged[key] || {}),
+                        ...dayMap,
+                    }
+                })
+                return { records: merged }
+            }),
+
             getAttendanceForDay: (date, courseId) => {
                 const key = `${date}_${courseId}`
                 return get().records[key] || {}

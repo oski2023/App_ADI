@@ -336,6 +336,83 @@ function numberToColumnLetter(num) {
     return col
 }
 
+// Obtiene el valor formateado de una celda (ej: 'B4', 'AJ3') desde una matriz bidimensional de filas
+function getCellFromGrid(rows, cellRef) {
+    if (!rows || !rows.length || !cellRef) return ''
+    const match = cellRef.match(/^([A-Z]+)(\d+)$/)
+    if (!match) return ''
+    const colLetters = match[1]
+    const rowNum = parseInt(match[2], 10)
+
+    let colIndex = 0
+    for (let i = 0; i < colLetters.length; i++) {
+        colIndex = colIndex * 26 + (colLetters.charCodeAt(i) - 64)
+    }
+    colIndex -= 1
+    const rowIndex = rowNum - 1
+
+    if (rowIndex < 0 || rowIndex >= rows.length) return ''
+    const row = rows[rowIndex]
+    if (!row || colIndex < 0 || colIndex >= row.length) return ''
+    const val = row[colIndex]
+    return val !== undefined && val !== null ? String(val) : ''
+}
+
+// Leer Tema y Asistencia desde su archivo vinculado en Google Sheets
+export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return null
+
+    try {
+        const response = await gapi.client.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetTitle}!A1:P60`,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const rows = response.result.values || []
+
+        const headerData = {}
+        Object.entries(FP_TOPIC_CELL_MAP).forEach(([field, cell]) => {
+            headerData[field] = getCellFromGrid(rows, cell)
+        })
+
+        const horarios = {}
+        Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => {
+            horarios[dia] = getCellFromGrid(rows, cell)
+        })
+
+        const entries = []
+        for (let r = FP_TOPIC_START_ROW; r <= Math.max(rows.length, FP_TOPIC_START_ROW + 30); r++) {
+            const fecha = getCellFromGrid(rows, `A${r}`)
+            const tema = getCellFromGrid(rows, `C${r}`)
+            const tiempoEstimado = getCellFromGrid(rows, `I${r}`)
+            const firmaInstructor = getCellFromGrid(rows, `K${r}`)
+            const observaciones = getCellFromGrid(rows, `M${r}`)
+            const firmaDirector = getCellFromGrid(rows, `O${r}`)
+
+            if (fecha || tema || tiempoEstimado || observaciones) {
+                entries.push({
+                    id: crypto.randomUUID(),
+                    fecha,
+                    tema,
+                    tiempoEstimado,
+                    firmaInstructor,
+                    observaciones,
+                    firmaDirector,
+                })
+            }
+        }
+
+        return {
+            ...headerData,
+            horarios,
+            entries,
+        }
+    } catch (error) {
+        console.error('[SheetsService] Error al leer Tema y Asistencia:', error)
+        throw error
+    }
+}
+
 // Mapeo de celdas — Asistencia de Alumnos (grilla mensual)
 const FP_ATTENDANCE_CELL_MAP = {
     centroNumero: 'Y3',
@@ -400,7 +477,86 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
 
         return true
     } catch (error) {
-                console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
+        console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
+        throw error
+    }
+}
+
+// Leer Asistencia de Alumnos desde su archivo vinculado en Google Sheets
+export async function readFPAttendanceSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return null
+
+    try {
+        const response = await gapi.client.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetTitle}!A1:AO50`,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const rows = response.result.values || []
+
+        const headerData = {}
+        Object.entries(FP_ATTENDANCE_CELL_MAP).forEach(([field, cell]) => {
+            headerData[field] = getCellFromGrid(rows, cell)
+        })
+
+        const horarios = {}
+        Object.entries(FP_ATTENDANCE_HORARIO_CELLS).forEach(([dia, cell]) => {
+            horarios[dia] = getCellFromGrid(rows, cell)
+        })
+
+        const movimiento = {}
+        Object.entries(FP_ATTENDANCE_MOVIMIENTO_CELLS).forEach(([campo, cell]) => {
+            movimiento[campo] = getCellFromGrid(rows, cell)
+        })
+
+        const students = []
+        for (let r = FP_ATTENDANCE_STUDENT_START_ROW; r < FP_ATTENDANCE_BAJA_START_ROW; r++) {
+            const sexo = getCellFromGrid(rows, `B${r}`)
+            const apellidosNombres = getCellFromGrid(rows, `C${r}`)
+            if (!apellidosNombres && !sexo) continue
+
+            const days = {}
+            for (let d = 1; d <= 31; d++) {
+                const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
+                days[d] = getCellFromGrid(rows, `${colLetter}${r}`)
+            }
+            const totalAus = getCellFromGrid(rows, `AK${r}`)
+            const totalPres = getCellFromGrid(rows, `AL${r}`)
+            const temasTratados = getCellFromGrid(rows, `AM${r}`)
+
+            students.push({
+                id: crypto.randomUUID(),
+                sexo,
+                apellidosNombres,
+                days,
+                totalAus,
+                totalPres,
+                temasTratados,
+            })
+        }
+
+        const bajas = []
+        for (let r = FP_ATTENDANCE_BAJA_START_ROW; r <= 27; r++) {
+            const sexo = getCellFromGrid(rows, `AM${r}`)
+            const apellidosNombres = getCellFromGrid(rows, `AN${r}`)
+            if (apellidosNombres || sexo) {
+                bajas.push({
+                    id: crypto.randomUUID(),
+                    sexo,
+                    apellidosNombres,
+                })
+            }
+        }
+
+        return {
+            ...headerData,
+            horarios,
+            movimiento,
+            students,
+            bajas,
+        }
+    } catch (error) {
+        console.error('[SheetsService] Error al leer Asistencia de Alumnos:', error)
         throw error
     }
 }
@@ -610,6 +766,19 @@ export async function syncAttendance(records) {
         })
     })
     return syncModule(SHEET_NAMES.ASISTENCIA, rows, (r) => r)
+}
+
+// Leer registros de asistencia desde la hoja de Google Sheets
+export async function readAttendanceRecords() {
+    const rows = await readSheet(SHEET_NAMES.ASISTENCIA, 'A2:D')
+    const records = {}
+    rows.forEach(([date, studentId, status, courseId]) => {
+        if (!date || !studentId || !status) return
+        const key = courseId ? `${date}_${courseId}` : date
+        if (!records[key]) records[key] = {}
+        records[key][studentId] = status
+    })
+    return records
 }
 
 export async function syncGrades(grades, subjects) {

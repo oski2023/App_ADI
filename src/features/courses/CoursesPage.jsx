@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { Plus, Edit2, Trash2, BookOpen, Users } from 'lucide-react'
+import { Plus, Edit2, Trash2, BookOpen, Users, Info } from 'lucide-react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import Modal from '../../shared/components/Modal'

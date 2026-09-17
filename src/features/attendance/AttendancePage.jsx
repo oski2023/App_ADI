@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Check, X, Clock, CheckCheck, AlertTriangle, GraduationCap, CalendarDays, Users, UserCheck, UserX, UserMinus, ChevronRight, Info } from 'lucide-react'
+import { Check, X, Clock, CheckCheck, AlertTriangle, GraduationCap, CalendarDays, Users, UserCheck, UserX, UserMinus, ChevronRight, Info, CloudDownload } from 'lucide-react'
 import { Card, CardBody, CardHeader } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import Badge from '../../shared/components/Badge'
@@ -11,6 +11,9 @@ import useAttendanceStore from '../../core/stores/useAttendanceStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import useCalendarStore from '../../core/stores/useCalendarStore'
 import { EVENT_TYPES } from '../../core/constants'
+import { readAttendanceRecords } from '../../infrastructure/google/sheetsService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
+import toast from 'react-hot-toast'
 
 export default function AttendancePage() {
     const courses = useCourseStore((s) => s.courses)
@@ -18,11 +21,40 @@ export default function AttendancePage() {
     const records = useAttendanceStore((s) => s.records)
     const setAttendance = useAttendanceStore((s) => s.setAttendance)
     const setAllPresent = useAttendanceStore((s) => s.setAllPresent)
+    const mergeRecords = useAttendanceStore((s) => s.mergeRecords)
     const threshold = useSettingsStore((s) => s.settings.absenceThreshold)
+    const googleLinked = useSettingsStore((s) => s.googleLinked)
     const calendarEvents = useCalendarStore((s) => s.events)
 
     const [selectedCourse, setSelectedCourse] = useState(courses[0]?.id || '')
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+    const [pulling, setPulling] = useState(false)
+
+    const handlePullAttendance = async () => {
+        if (!googleLinked) {
+            toast.error('Primero vinculá tu cuenta de Google en Configuración')
+            return
+        }
+        setPulling(true)
+        try {
+            const fetched = await readAttendanceRecords()
+            const count = Object.keys(fetched).length
+            if (count > 0) {
+                mergeRecords(fetched)
+                toast.success('Asistencia sincronizada desde Google Sheets')
+            } else {
+                toast('No se encontraron registros previos de asistencia en Google Sheets')
+            }
+        } catch (error) {
+            if (isAuthError(error)) {
+                notifyAuthExpired(handlePullAttendance)
+            } else {
+                toast.error('Error al traer la asistencia desde Google Sheets')
+            }
+        } finally {
+            setPulling(false)
+        }
+    }
 
     const isStrikeDay = calendarEvents.some((e) => e.date === selectedDate && e.type === EVENT_TYPES.STRIKE)
 
@@ -97,16 +129,30 @@ export default function AttendancePage() {
                         <span>{new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
                     </div>
                 </div>
-                {students.length > 0 && (
-                    <Button
-                        icon={CheckCheck}
-                        onClick={handleMarkAll}
-                        variant="secondary"
-                        className="shadow-xl shadow-secondary/20 hover:scale-105 transition-transform"
-                    >
-                        Todos Presentes
-                    </Button>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                    {googleLinked && (
+                        <Button
+                            icon={CloudDownload}
+                            onClick={handlePullAttendance}
+                            loading={pulling}
+                            disabled={pulling}
+                            variant="outline"
+                            title="Descargar asistencia guardada en Google Sheets (útil si la cargaste en la PC)"
+                        >
+                            Traer de Sheets
+                        </Button>
+                    )}
+                    {students.length > 0 && (
+                        <Button
+                            icon={CheckCheck}
+                            onClick={handleMarkAll}
+                            variant="secondary"
+                            className="shadow-xl shadow-secondary/20 hover:scale-105 transition-transform"
+                        >
+                            Todos Presentes
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Filters */}

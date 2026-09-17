@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw } from 'lucide-react'
+import Modal from '../../shared/components/Modal'
+import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPAttendanceSheet } from '../../infrastructure/google/sheetsService'
+import { syncFPAttendanceSheet, readFPAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -43,11 +44,18 @@ export default function FPAttendanceSheetPage() {
     const addBaja = useFPAttendanceSheetStore((s) => s.addBaja)
     const updateBaja = useFPAttendanceSheetStore((s) => s.updateBaja)
     const deleteBaja = useFPAttendanceSheetStore((s) => s.deleteBaja)
+    const importOrUpdateSheet = useFPAttendanceSheetStore((s) => s.importOrUpdateSheet)
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
     const attendanceLink = useFPGoogleLinksStore((s) => s.links.attendanceSheet)
+    const setLink = useFPGoogleLinksStore((s) => s.setLink)
+
     const [syncing, setSyncing] = useState(false)
+    const [pulling, setPulling] = useState(false)
+    const [showLinkModal, setShowLinkModal] = useState(false)
+    const [linkInput, setLinkInput] = useState('')
+    const [linking, setLinking] = useState(false)
 
     const handleSync = async () => {
         if (!attendanceLink) {
@@ -69,19 +77,86 @@ export default function FPAttendanceSheetPage() {
         }
     }
 
+    const executePull = async (spreadsheetId, sheetTitle, targetSheetId = null) => {
+        setPulling(true)
+        try {
+            const data = await readFPAttendanceSheet(spreadsheetId, sheetTitle)
+            if (!data) {
+                toast.error('No se pudieron leer los datos de asistencia')
+                return
+            }
+            const updatedId = importOrUpdateSheet(data, targetSheetId)
+            if (targetSheetId) {
+                setSelectedId(updatedId)
+            }
+            toast.success(`Asistencia traída desde Google Sheets (${data.students.length} alumnos)`)
+        } catch (error) {
+            if (isAuthError(error)) {
+                notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetSheetId))
+            } else {
+                toast.error('Error al traer los datos desde Google Sheets')
+            }
+        } finally {
+            setPulling(false)
+        }
+    }
+
+    const handlePullFromSheets = (targetSheetId = null) => {
+        if (!attendanceLink) {
+            setShowLinkModal(true)
+            return
+        }
+        if (!window.confirm('Esto va a traer los datos de asistencia desde Google Sheets y actualizará tu copia local. ¿Continuar?')) {
+            return
+        }
+        executePull(attendanceLink.spreadsheetId, attendanceLink.sheetTitle, targetSheetId)
+    }
+
+    const handleLinkAndPull = async () => {
+        if (!linkInput.trim()) {
+            toast.error('Pegá el link o ID de la hoja de cálculo')
+            return
+        }
+        setLinking(true)
+        try {
+            const result = await linkFPDocument(linkInput.trim())
+            setLink('attendanceSheet', result)
+            setShowLinkModal(false)
+            setLinkInput('')
+            toast.success('Archivo vinculado correctamente')
+            await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
+        } catch (error) {
+            toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+        } finally {
+            setLinking(false)
+        }
+    }
+
     if (selected) {
         return (
             <div className="space-y-6 animate-fade-in">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
                     <h1 className="text-xl font-bold text-text-primary flex-1">
                         Asistencia de Alumnos {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
-                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={handleSync}>
-                        Sincronizar con Sheets
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            icon={CloudDownload}
+                            loading={pulling}
+                            disabled={pulling || syncing}
+                            onClick={() => handlePullFromSheets(selected.id)}
+                            title="Recarga los datos de esta planilla desde Google Sheets"
+                        >
+                            Cargar de Sheets
+                        </Button>
+                        <Button icon={RefreshCw} loading={syncing} disabled={syncing || pulling} onClick={handleSync}>
+                            Sincronizar con Sheets
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Datos generales */}
@@ -292,20 +367,32 @@ export default function FPAttendanceSheetPage() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-text-primary">Asistencia de Alumnos</h1>
                     <p className="text-sm text-text-secondary mt-1">Formación Profesional</p>
                 </div>
-                <Button icon={Plus} onClick={() => setSelectedId(addSheet())}>
-                    Nuevo Informe Mensual
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        icon={CloudDownload}
+                        loading={pulling}
+                        disabled={pulling}
+                        onClick={() => handlePullFromSheets(null)}
+                        title="Descarga la planilla de asistencia desde Google Sheets hacia este dispositivo"
+                    >
+                        Traer de Google Sheets
+                    </Button>
+                    <Button icon={Plus} onClick={() => setSelectedId(addSheet())}>
+                        Nuevo Informe Mensual
+                    </Button>
+                </div>
             </div>
 
             {sheets.length === 0 && (
                 <Card>
                     <CardBody className="text-center py-10 text-text-muted">
-                        Todavía no cargaste ningún informe mensual. Hacé clic en "Nuevo Informe Mensual" para empezar.
+                        Todavía no cargaste ningún informe mensual en este dispositivo. Hacé clic en "Traer de Google Sheets" para descargar lo que tenés en la nube, o en "Nuevo Informe Mensual" para empezar de cero.
                     </CardBody>
                 </Card>
             )}
@@ -331,6 +418,37 @@ export default function FPAttendanceSheetPage() {
                     </Card>
                 ))}
             </div>
+
+            {/* Modal para vincular la hoja en este dispositivo si todavía no se vinculó */}
+            <Modal
+                isOpen={showLinkModal}
+                onClose={() => setShowLinkModal(false)}
+                title="Vincular Asistencia de Alumnos"
+            >
+                <div className="space-y-4 p-2">
+                    <p className="text-sm text-text-secondary">
+                        Para sincronizar con este dispositivo (ej. tu celular), pegá el link o ID de la hoja de cálculo de Google Sheets correspondiente:
+                    </p>
+                    <Input
+                        placeholder="https://docs.google.com/spreadsheets/d/... o ID"
+                        value={linkInput}
+                        onChange={(e) => setLinkInput(e.target.value)}
+                    />
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="ghost" onClick={() => setShowLinkModal(false)}>
+                            Cancelar
+                        </Button>
+                        <Button
+                            icon={Link2}
+                            loading={linking}
+                            disabled={linking}
+                            onClick={handleLinkAndPull}
+                        >
+                            Vincular y Descargar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
         </div>
     )
 }

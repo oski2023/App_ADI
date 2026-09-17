@@ -68,6 +68,42 @@ const useFPAttendanceSheetStore = create(
                 sheets: state.sheets.map((s) => (s.id === id ? { ...s, ...data } : s)),
             })),
 
+            // Sincronización bidireccional (PC ↔ Celular):
+            // Importa un informe mensual leído desde Google Sheets. Si ya existe en este dispositivo
+            // (mismo Centro y Curso), actualiza sus alumnos y días; si inicia limpio, lo agrega a la lista.
+            importOrUpdateSheet: (sheetData, targetId = null) => {
+                const currentSheets = get().sheets
+                let updatedId = targetId
+
+                if (targetId && currentSheets.some((s) => s.id === targetId)) {
+                    set((state) => ({
+                        sheets: state.sheets.map((s) => (s.id === targetId ? { ...s, ...sheetData } : s)),
+                    }))
+                    return targetId
+                }
+
+                const existingIndex = currentSheets.findIndex(
+                    (s) => s.centroNumero && s.cursoNumero && s.centroNumero === sheetData.centroNumero && s.cursoNumero === sheetData.cursoNumero
+                )
+
+                if (existingIndex >= 0) {
+                    updatedId = currentSheets[existingIndex].id
+                    set((state) => ({
+                        sheets: state.sheets.map((s, idx) => (idx === existingIndex ? { ...s, ...sheetData } : s)),
+                    }))
+                } else {
+                    const newSheet = {
+                        ...emptySheet(),
+                        ...sheetData,
+                        id: crypto.randomUUID(),
+                    }
+                    updatedId = newSheet.id
+                    set((state) => ({ sheets: [...state.sheets, newSheet] }))
+                }
+
+                return updatedId
+            },
+
             updateSheetHorario: (id, dia, valor) => set((state) => ({
                 sheets: state.sheets.map((s) =>
                     s.id === id ? { ...s, horarios: { ...s.horarios, [dia]: valor } } : s
