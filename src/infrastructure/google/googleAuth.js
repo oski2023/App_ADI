@@ -7,6 +7,7 @@ import { GOOGLE_CONFIG, isGoogleConfigured } from './googleConfig'
 let isInitialized = false
 let currentUser = null
 let tokenClient = null
+let refreshTimerId = null
 
 // Cargar scripts de Google dinámicamente
 const loadScript = (src) => new Promise((resolve, reject) => {
@@ -18,6 +19,46 @@ const loadScript = (src) => new Promise((resolve, reject) => {
     script.onerror = reject
     document.head.appendChild(script)
 })
+
+// Programar una renovación silenciosa del token antes de que venza
+function scheduleAutoRefresh(expiresInSeconds) {
+    if (refreshTimerId) clearTimeout(refreshTimerId)
+    // Renovar 5 minutos antes de que venza (los tokens suelen durar 3600s)
+    const delayMs = Math.max((expiresInSeconds - 300) * 1000, 30000)
+    refreshTimerId = setTimeout(() => {
+        silentRefresh().catch(() => {
+            console.warn('[GoogleAuth] No se pudo renovar el token en segundo plano; se pedirá login la próxima vez que haga falta.')
+        })
+    }, delayMs)
+}
+
+// Pedir un token nuevo SIN mostrar popup (funciona si la sesión de Google sigue activa)
+export function silentRefresh() {
+    if (!tokenClient) return Promise.reject(new Error('Google Auth no inicializado'))
+
+    return new Promise((resolve, reject) => {
+        tokenClient.callback = (response) => {
+            if (response.error) return reject(response)
+            console.log('[GoogleAuth] Token renovado en segundo plano')
+            scheduleAutoRefresh(response.expires_in || 3600)
+            resolve(response)
+        }
+        tokenClient.requestAccessToken({ prompt: '' })
+    })
+}
+
+// Si ya estuviste vinculado antes, intenta renovar la sesión solo, sin pedir nada al usuario
+export async function autoInitIfLinked(wasLinked) {
+    if (!wasLinked || !isGoogleConfigured()) return false
+    try {
+        if (!isInitialized) await initGoogleAuth()
+        await silentRefresh()
+        return true
+    } catch (error) {
+        console.warn('[GoogleAuth] No se pudo renovar la sesión automáticamente, hará falta volver a vincular manualmente.')
+        return false
+    }
+}
 
 // Inicializar el cliente Google Real
 export async function initGoogleAuth() {
@@ -59,6 +100,30 @@ export async function initGoogleAuth() {
     }
 }
 
+// Reconectar con un clic real del usuario: intenta silencioso primero, y si Google lo pide, muestra el consentimiento
+export function reconnectGoogle() {
+    if (!tokenClient) return Promise.reject(new Error('Google Auth no inicializado'))
+
+    return new Promise((resolve, reject) => {
+        tokenClient.callback = (response) => {
+            if (!response.error) {
+                console.log('[GoogleAuth] Reconectado correctamente')
+                scheduleAutoRefresh(response.expires_in || 3600)
+                return resolve(response)
+            }
+            // El intento silencioso falló, reintentar mostrando el consentimiento
+            tokenClient.callback = (response2) => {
+                if (response2.error) return reject(response2)
+                console.log('[GoogleAuth] Reconectado correctamente (con consentimiento)')
+                scheduleAutoRefresh(response2.expires_in || 3600)
+                resolve(response2)
+            }
+            tokenClient.requestAccessToken({ prompt: 'consent' })
+        }
+        tokenClient.requestAccessToken({ prompt: '' })
+    })
+}
+
 // Iniciar sesión con Google (Real)
 export async function signIn() {
     if (!isInitialized) await initGoogleAuth()
@@ -83,6 +148,7 @@ export async function signIn() {
                 }
 
                 console.log('[GoogleAuth] Sesión iniciada para:', currentUser.email)
+                scheduleAutoRefresh(response.expires_in || 3600)
                 resolve(currentUser)
             }
 
@@ -96,6 +162,10 @@ export async function signIn() {
 
 // Cerrar sesión (Real)
 export async function signOut() {
+    if (refreshTimerId) {
+        clearTimeout(refreshTimerId)
+        refreshTimerId = null
+    }
     if (gapi.client.getToken() !== null) {
         google.accounts.oauth2.revoke(gapi.client.getToken().access_token, () => {
             console.log('[GoogleAuth] Token revocado correctamente')

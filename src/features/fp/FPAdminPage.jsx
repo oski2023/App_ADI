@@ -9,6 +9,7 @@ import {
 import useFPAdminRecordsStore from '../../core/stores/useFPAdminRecordsStore'
 import useFPAdminLinksStore from '../../core/stores/useFPAdminLinksStore'
 import { syncFPAdminRecords, linkFPDocument, readFPRows, extractSpreadsheetId } from '../../infrastructure/google/sheetsService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { isGoogleConfigured } from '../../infrastructure/google/googleConfig'
 import toast from 'react-hot-toast'
@@ -72,9 +73,13 @@ export default function FPAdminPage() {
                 allRecords = [...allRecords, ...parsed]
             }
             setRecords(allRecords)
-            toast.success(`${allRecords.length} registros traídos desde Google Sheets`)
+                        toast.success(`${allRecords.length} registros traídos desde Google Sheets`)
         } catch (error) {
-            toast.error('Error al traer los datos desde Google Sheets')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleLoadFromSheets)
+            } else {
+                toast.error('Error al traer los datos desde Google Sheets')
+            }
         } finally {
             setLoading(false)
         }
@@ -159,9 +164,13 @@ export default function FPAdminPage() {
                 const grupo = records.filter((r) => r.documento === tipo)
                 await syncFPAdminRecords(links[tipo].spreadsheetId, links[tipo].sheetTitle, grupo)
             }
-            toast.success('Sincronizado con Google Sheets')
+                        toast.success('Sincronizado con Google Sheets')
         } catch (error) {
-            toast.error('Error al sincronizar con Google Sheets')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSync)
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
         } finally {
             setSyncing(false)
         }

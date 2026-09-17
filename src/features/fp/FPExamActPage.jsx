@@ -7,6 +7,7 @@ import useFPExamActStore from '../../core/stores/useFPExamActStore'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import { numberToWordsEs } from '../../utils/numberToWordsEs'
 import { syncFPExamActSheet } from '../../infrastructure/google/sheetsService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import toast from 'react-hot-toast'
 
@@ -80,7 +81,11 @@ export default function FPExamActPage() {
             await syncFPExamActSheet(examActLink.spreadsheetId, examActLink.sheetTitle, selected)
             toast.success('Sincronizado con Google Sheets')
         } catch (error) {
-            toast.error('Error al sincronizar con Google Sheets')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSync)
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
         } finally {
             setSyncing(false)
         }

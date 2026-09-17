@@ -6,6 +6,7 @@ import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw } from 'lucide-react'
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPTopicAttendanceSheet } from '../../infrastructure/google/sheetsService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
 const DIAS = [
@@ -42,7 +43,11 @@ export default function FPTopicAttendancePage() {
             await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, selected)
             toast.success('Sincronizado con Google Sheets')
         } catch (error) {
-            toast.error('Error al sincronizar con Google Sheets')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSync)
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
         } finally {
             setSyncing(false)
         }

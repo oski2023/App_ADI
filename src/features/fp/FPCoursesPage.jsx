@@ -6,6 +6,7 @@ import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPCourseSheet } from '../../infrastructure/google/sheetsService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
 const DIAS = [
@@ -43,7 +44,11 @@ export default function FPCoursesPage() {
             await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, selected)
             toast.success('Sincronizado con Google Sheets')
         } catch (error) {
-            toast.error('Error al sincronizar con Google Sheets')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSync)
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
         } finally {
             setSyncing(false)
         }

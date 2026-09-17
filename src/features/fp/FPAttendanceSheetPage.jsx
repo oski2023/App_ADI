@@ -6,6 +6,7 @@ import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw } from 'lucide-react
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPAttendanceSheet } from '../../infrastructure/google/sheetsService'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
 const DIAS_SEMANA = [
@@ -58,7 +59,11 @@ export default function FPAttendanceSheetPage() {
             await syncFPAttendanceSheet(attendanceLink.spreadsheetId, attendanceLink.sheetTitle, selected)
             toast.success('Sincronizado con Google Sheets')
         } catch (error) {
-            toast.error('Error al sincronizar con Google Sheets')
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSync)
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
         } finally {
             setSyncing(false)
         }
