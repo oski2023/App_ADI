@@ -376,14 +376,24 @@ export async function ensureFPSpreadsheetTab(spreadsheetId, desiredTitle, prefer
 }
 
 // Elimina una pestaña de Google Sheets cuando se elimina un curso o planilla
-export async function deleteFPSpreadsheetTab(spreadsheetId, sheetTitle) {
-    if (!isGoogleConfigured() || !spreadsheetId || !sheetTitle) return false
+export async function deleteFPSpreadsheetTab(spreadsheetId, sheetTitle, courseNumero = null) {
+    if (!isGoogleConfigured() || !spreadsheetId) return false
     try {
         const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
         const tabs = info.result.sheets || []
         if (tabs.length <= 1) return false
 
-        const match = tabs.find((t) => t.properties.title.toLowerCase() === sheetTitle.toLowerCase())
+        let match = null
+        if (sheetTitle) {
+            match = tabs.find((t) => t.properties.title.toLowerCase() === sheetTitle.toLowerCase())
+        }
+        if (!match && courseNumero) {
+            const num = courseNumero.toString().trim().toLowerCase()
+            match = tabs.find((t) => {
+                const title = t.properties.title.toLowerCase()
+                return title.includes(`curso ${num}`) || title.includes(`curso nº ${num}`) || title === num || title.startsWith(`curso ${num}`)
+            })
+        }
         if (!match) return false
 
         await gapi.client.sheets.spreadsheets.batchUpdate({

@@ -7,7 +7,7 @@ import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, readAllFPTopicAttendanceSheets, clearFPTopicAttendanceSheet, deleteFPSpreadsheetTab, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, readAllFPTopicAttendanceSheets, clearFPTopicAttendanceSheet, deleteFPSpreadsheetTab, buildFPTopicTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -30,6 +30,7 @@ export default function FPTopicAttendancePage() {
     const updateEntry = useFPTopicAttendanceStore((s) => s.updateEntry)
     const deleteEntry = useFPTopicAttendanceStore((s) => s.deleteEntry)
     const importOrUpdateSheet = useFPTopicAttendanceStore((s) => s.importOrUpdateSheet)
+    const syncAllFromCloud = useFPTopicAttendanceStore((s) => s.syncAllFromCloud)
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
@@ -125,7 +126,8 @@ export default function FPTopicAttendancePage() {
         if (!sheetToDelete) return
         const targetId = sheetToDelete.id
         const targetName = sheetToDelete.especialidad || 'Planilla'
-        const targetTab = sheetToDelete.googleSheetTitle
+        const targetTab = sheetToDelete.googleSheetTitle || buildFPTopicTabTitle(sheetToDelete)
+        const targetCurso = sheetToDelete.cursoNumero
         deleteSheet(targetId)
         setSheetToDelete(null)
 
@@ -137,9 +139,7 @@ export default function FPTopicAttendancePage() {
                     await clearFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle)
                     toast.success(`"${targetName}" eliminada y Google Sheets vaciado`)
                 } else {
-                    if (targetTab) {
-                        await deleteFPSpreadsheetTab(topicLink.spreadsheetId, targetTab)
-                    }
+                    await deleteFPSpreadsheetTab(topicLink.spreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminada`)
                 }
             } catch (error) {
@@ -176,12 +176,8 @@ export default function FPTopicAttendancePage() {
                     toast.error('No se encontraron planillas de tema y asistencia en la hoja')
                     return
                 }
-                let count = 0
-                for (const item of allSheets) {
-                    importOrUpdateSheet(item)
-                    count++
-                }
-                toast.success(`Se importaron/actualizaron ${count} planilla(s) desde Google Sheets`)
+                syncAllFromCloud(allSheets)
+                toast.success(`Se sincronizaron ${allSheets.length} planilla(s) desde Google Sheets`)
             }
         } catch (error) {
             if (isAuthError(error)) {
@@ -199,7 +195,10 @@ export default function FPTopicAttendancePage() {
             setShowLinkModal(true)
             return
         }
-        if (!window.confirm('Esto va a traer los datos desde Google Sheets y actualizará tu copia en este dispositivo. ¿Continuar?')) {
+        const confirmMsg = targetSheetId
+            ? 'Esto va a recargar los datos de esta planilla desde Google Sheets. ¿Continuar?'
+            : 'Esto va a sincronizar este dispositivo con Google Sheets. Las planillas quedarán exactamente iguales a las de la nube (se actualizarán y se eliminarán las que ya no existan en Google Sheets). ¿Continuar?'
+        if (!window.confirm(confirmMsg)) {
             return
         }
         executePull(topicLink.spreadsheetId, topicLink.sheetTitle, targetSheetId)

@@ -7,7 +7,7 @@ import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, buildFPCourseTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -31,6 +31,7 @@ export default function FPCoursesPage() {
     const updateStudent = useFPCourseStore((s) => s.updateStudent)
     const deleteStudent = useFPCourseStore((s) => s.deleteStudent)
     const importOrUpdateCourse = useFPCourseStore((s) => s.importOrUpdateCourse)
+    const syncAllFromCloud = useFPCourseStore((s) => s.syncAllFromCloud)
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = courses.find((c) => c.id === selectedId)
@@ -126,7 +127,8 @@ export default function FPCoursesPage() {
         if (!courseToDelete) return
         const targetId = courseToDelete.id
         const targetName = courseToDelete.especialidad || 'Curso'
-        const targetTab = courseToDelete.googleSheetTitle
+        const targetTab = courseToDelete.googleSheetTitle || buildFPCourseTabTitle(courseToDelete)
+        const targetCurso = courseToDelete.cursoNumero
         deleteCourse(targetId)
         setCourseToDelete(null)
 
@@ -138,9 +140,7 @@ export default function FPCoursesPage() {
                     await clearFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle)
                     toast.success(`"${targetName}" eliminado y Google Sheets vaciado`)
                 } else {
-                    if (targetTab) {
-                        await deleteFPSpreadsheetTab(courseLink.spreadsheetId, targetTab)
-                    }
+                    await deleteFPSpreadsheetTab(courseLink.spreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminado`)
                 }
             } catch (error) {
@@ -177,12 +177,8 @@ export default function FPCoursesPage() {
                     toast.error('No se encontraron cursos en la hoja')
                     return
                 }
-                let count = 0
-                for (const item of allCourses) {
-                    importOrUpdateCourse(item)
-                    count++
-                }
-                toast.success(`Se importaron/actualizaron ${count} curso(s) desde Google Sheets`)
+                syncAllFromCloud(allCourses)
+                toast.success(`Se sincronizaron ${allCourses.length} curso(s) desde Google Sheets`)
             }
         } catch (error) {
             if (isAuthError(error)) {
@@ -200,7 +196,10 @@ export default function FPCoursesPage() {
             setShowLinkModal(true)
             return
         }
-        if (!window.confirm('Esto va a traer los datos de los cursos desde Google Sheets y actualizará tu copia local. ¿Continuar?')) {
+        const confirmMsg = targetCourseId
+            ? 'Esto va a recargar los datos de este curso desde Google Sheets. ¿Continuar?'
+            : 'Esto va a sincronizar este dispositivo con Google Sheets. Los cursos quedarán exactamente iguales a los de la nube (se actualizarán y se eliminarán los que ya no existan en Google Sheets). ¿Continuar?'
+        if (!window.confirm(confirmMsg)) {
             return
         }
         executePull(courseLink.spreadsheetId, courseLink.sheetTitle, targetCourseId)

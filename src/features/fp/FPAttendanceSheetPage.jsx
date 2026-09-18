@@ -7,7 +7,7 @@ import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPAttendanceSheet, readFPAttendanceSheet, readAllFPAttendanceSheets, clearFPAttendanceSheet, deleteFPSpreadsheetTab, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { syncFPAttendanceSheet, readFPAttendanceSheet, readAllFPAttendanceSheets, clearFPAttendanceSheet, deleteFPSpreadsheetTab, buildFPAttendanceTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -46,6 +46,7 @@ export default function FPAttendanceSheetPage() {
     const updateBaja = useFPAttendanceSheetStore((s) => s.updateBaja)
     const deleteBaja = useFPAttendanceSheetStore((s) => s.deleteBaja)
     const importOrUpdateSheet = useFPAttendanceSheetStore((s) => s.importOrUpdateSheet)
+    const syncAllFromCloud = useFPAttendanceSheetStore((s) => s.syncAllFromCloud)
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
@@ -141,7 +142,8 @@ export default function FPAttendanceSheetPage() {
         if (!sheetToDelete) return
         const targetId = sheetToDelete.id
         const targetName = sheetToDelete.especialidad || 'Planilla'
-        const targetTab = sheetToDelete.googleSheetTitle
+        const targetTab = sheetToDelete.googleSheetTitle || buildFPAttendanceTabTitle(sheetToDelete)
+        const targetCurso = sheetToDelete.cursoNumero
         deleteSheet(targetId)
         setSheetToDelete(null)
 
@@ -153,9 +155,7 @@ export default function FPAttendanceSheetPage() {
                     await clearFPAttendanceSheet(attendanceLink.spreadsheetId, attendanceLink.sheetTitle)
                     toast.success(`"${targetName}" eliminada y Google Sheets vaciado`)
                 } else {
-                    if (targetTab) {
-                        await deleteFPSpreadsheetTab(attendanceLink.spreadsheetId, targetTab)
-                    }
+                    await deleteFPSpreadsheetTab(attendanceLink.spreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminada`)
                 }
             } catch (error) {
@@ -192,12 +192,8 @@ export default function FPAttendanceSheetPage() {
                     toast.error('No se encontraron planillas de asistencia en la hoja')
                     return
                 }
-                let count = 0
-                for (const item of allSheets) {
-                    importOrUpdateSheet(item)
-                    count++
-                }
-                toast.success(`Se importaron/actualizaron ${count} planilla(s) desde Google Sheets`)
+                syncAllFromCloud(allSheets)
+                toast.success(`Se sincronizaron ${allSheets.length} planilla(s) desde Google Sheets`)
             }
         } catch (error) {
             if (isAuthError(error)) {
@@ -215,7 +211,10 @@ export default function FPAttendanceSheetPage() {
             setShowLinkModal(true)
             return
         }
-        if (!window.confirm('Esto va a traer los datos de asistencia desde Google Sheets y actualizará tu copia local. ¿Continuar?')) {
+        const confirmMsg = targetSheetId
+            ? 'Esto va a recargar los datos de esta planilla desde Google Sheets. ¿Continuar?'
+            : 'Esto va a sincronizar este dispositivo con Google Sheets. Las planillas quedarán exactamente iguales a las de la nube (se actualizarán y se eliminarán las que ya no existan en Google Sheets). ¿Continuar?'
+        if (!window.confirm(confirmMsg)) {
             return
         }
         executePull(attendanceLink.spreadsheetId, attendanceLink.sheetTitle, targetSheetId)

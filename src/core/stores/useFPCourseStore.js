@@ -96,6 +96,27 @@ const useFPCourseStore = create(
                 return updatedId
             },
 
+            // Sincronización completa (Espejo de Google Sheets)
+            syncAllFromCloud: (cloudCourses) => {
+                const currentCourses = get().courses
+                const updatedList = cloudCourses.map((cCourse) => {
+                    const match = currentCourses.find((c) => {
+                        if (c.googleSheetTitle && cCourse.googleSheetTitle && c.googleSheetTitle === cCourse.googleSheetTitle) return true
+                        const sCurso = (c.cursoNumero || '').trim().toLowerCase()
+                        const dCurso = (cCourse.cursoNumero || '').trim().toLowerCase()
+                        if (sCurso && dCurso && sCurso === dCurso) return true
+                        return false
+                    })
+                    return {
+                        ...emptyCourse(),
+                        ...cCourse,
+                        id: match ? match.id : crypto.randomUUID(),
+                    }
+                })
+                set({ courses: updatedList })
+                return updatedList
+            },
+
             updateCourseHorario: (id, dia, valor) => set((state) => ({
                 courses: state.courses.map((c) =>
                     c.id === id ? { ...c, horarios: { ...c.horarios, [dia]: valor } } : c

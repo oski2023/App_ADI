@@ -125,6 +125,29 @@ const useFPAttendanceSheetStore = create(
                 return updatedId
             },
 
+            // Sincronización completa (Espejo de Google Sheets):
+            // Reemplaza la lista local con todas las planillas leídas de la nube.
+            // Preserva los IDs locales de los cursos que coincidan, y descarta los eliminados de la nube.
+            syncAllFromCloud: (cloudSheets) => {
+                const currentSheets = get().sheets
+                const updatedList = cloudSheets.map((cSheet) => {
+                    const match = currentSheets.find((s) => {
+                        if (s.googleSheetTitle && cSheet.googleSheetTitle && s.googleSheetTitle === cSheet.googleSheetTitle) return true
+                        const sCurso = (s.cursoNumero || '').trim().toLowerCase()
+                        const dCurso = (cSheet.cursoNumero || '').trim().toLowerCase()
+                        if (sCurso && dCurso && sCurso === dCurso) return true
+                        return false
+                    })
+                    return {
+                        ...emptySheet(),
+                        ...cSheet,
+                        id: match ? match.id : crypto.randomUUID(),
+                    }
+                })
+                set({ sheets: updatedList })
+                return updatedList
+            },
+
             updateSheetHorario: (id, dia, valor) => set((state) => ({
                 sheets: state.sheets.map((s) =>
                     s.id === id ? { ...s, horarios: { ...s.horarios, [dia]: valor } } : s
