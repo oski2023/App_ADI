@@ -18,6 +18,7 @@ const emptyCourse = () => ({
     instructor: '',
     matricula: { v: '', m: '', x: '' },
     students: [],
+    googleSheetTitle: '',
 })
 
 const emptyStudent = () => ({
@@ -47,6 +48,53 @@ const useFPCourseStore = create(
             updateCourse: (id, data) => set((state) => ({
                 courses: state.courses.map((c) => (c.id === id ? { ...c, ...data } : c)),
             })),
+
+            // Sincronización bidireccional (PC ↔ Celular) para Ficha de Curso:
+            importOrUpdateCourse: (courseData, targetId = null) => {
+                const currentCourses = get().courses
+                let updatedId = targetId
+
+                if (targetId && currentCourses.some((c) => c.id === targetId)) {
+                    set((state) => ({
+                        courses: state.courses.map((c) => (c.id === targetId ? { ...c, ...courseData } : c)),
+                    }))
+                    return targetId
+                }
+
+                const existingIndex = currentCourses.findIndex((c) => {
+                    if (c.googleSheetTitle && courseData.googleSheetTitle && c.googleSheetTitle === courseData.googleSheetTitle) {
+                        return true
+                    }
+                    const cCurso = (c.cursoNumero || '').trim().toLowerCase()
+                    const dCurso = (courseData.cursoNumero || '').trim().toLowerCase()
+                    const cEsp = (c.especialidad || '').trim().toLowerCase()
+                    const dEsp = (courseData.especialidad || '').trim().toLowerCase()
+
+                    if (cCurso && dCurso && cCurso === dCurso) return true
+                    if (cEsp && dEsp && cEsp === dEsp) return true
+                    if (c.cfpNumero && courseData.cfpNumero && c.cfpNumero === courseData.cfpNumero && cCurso && dCurso && cCurso === dCurso) {
+                        return true
+                    }
+                    return false
+                })
+
+                if (existingIndex >= 0) {
+                    updatedId = currentCourses[existingIndex].id
+                    set((state) => ({
+                        courses: state.courses.map((c, idx) => (idx === existingIndex ? { ...c, ...courseData } : c)),
+                    }))
+                } else {
+                    const newCourse = {
+                        ...emptyCourse(),
+                        ...courseData,
+                        id: crypto.randomUUID(),
+                    }
+                    updatedId = newCourse.id
+                    set((state) => ({ courses: [...state.courses, newCourse] }))
+                }
+
+                return updatedId
+            },
 
             updateCourseHorario: (id, dia, valor) => set((state) => ({
                 courses: state.courses.map((c) =>

@@ -35,6 +35,7 @@ const emptySheet = () => ({
     instructor: '',
     entrego: '',
     recibio: '',
+    googleSheetTitle: '',
 })
 
 const emptyStudent = () => ({
@@ -69,8 +70,8 @@ const useFPAttendanceSheetStore = create(
             })),
 
             // Sincronización bidireccional (PC ↔ Celular):
-            // Importa un informe mensual leído desde Google Sheets. Si ya existe en este dispositivo
-            // (mismo Centro y Curso), actualiza sus alumnos y días; si inicia limpio, lo agrega a la lista.
+            // Importa un informe mensual leído desde Google Sheets. Si ya existe en este dispositivo,
+            // actualiza sus alumnos y días; si no existe, lo agrega a la lista.
             importOrUpdateSheet: (sheetData, targetId = null) => {
                 const currentSheets = get().sheets
                 let updatedId = targetId
@@ -82,9 +83,29 @@ const useFPAttendanceSheetStore = create(
                     return targetId
                 }
 
-                const existingIndex = currentSheets.findIndex(
-                    (s) => s.centroNumero && s.cursoNumero && s.centroNumero === sheetData.centroNumero && s.cursoNumero === sheetData.cursoNumero
-                )
+                // Coincidencia inteligente por pestaña, curso, especialidad o centro
+                const existingIndex = currentSheets.findIndex((s) => {
+                    if (s.googleSheetTitle && sheetData.googleSheetTitle && s.googleSheetTitle === sheetData.googleSheetTitle) {
+                        return true
+                    }
+                    const sCurso = (s.cursoNumero || '').trim().toLowerCase()
+                    const dCurso = (sheetData.cursoNumero || '').trim().toLowerCase()
+                    const sMes = (s.informeMes || '').trim().toLowerCase()
+                    const dMes = (sheetData.informeMes || '').trim().toLowerCase()
+                    const sEsp = (s.especialidad || '').trim().toLowerCase()
+                    const dEsp = (sheetData.especialidad || '').trim().toLowerCase()
+
+                    if (sCurso && dCurso && sCurso === dCurso) {
+                        if (!sMes || !dMes || sMes === dMes) return true
+                    }
+                    if (sEsp && dEsp && sEsp === dEsp) {
+                        if (!sMes || !dMes || sMes === dMes) return true
+                    }
+                    if (s.centroNumero && sheetData.centroNumero && s.centroNumero === sheetData.centroNumero && sCurso && dCurso && sCurso === dCurso) {
+                        return true
+                    }
+                    return false
+                })
 
                 if (existingIndex >= 0) {
                     updatedId = currentSheets[existingIndex].id

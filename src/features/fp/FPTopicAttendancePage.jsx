@@ -7,7 +7,7 @@ import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, clearFPTopicAttendanceSheet, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, readAllFPTopicAttendanceSheets, clearFPTopicAttendanceSheet, deleteFPSpreadsheetTab, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -53,11 +53,45 @@ export default function FPTopicAttendancePage() {
         }
         setSyncing(true)
         try {
-            await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, sheetToSync)
+            const res = await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, sheetToSync)
+            if (res?.sheetTitle && res.sheetTitle !== sheetToSync.googleSheetTitle) {
+                updateSheet(sheetToSync.id, { googleSheetTitle: res.sheetTitle })
+            }
             toast.success(`"${sheetToSync.especialidad || 'Planilla'}" sincronizada con Google Sheets`)
         } catch (error) {
             if (isAuthError(error)) {
                 notifyAuthExpired(() => handleSyncSingle(sheetToSync))
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
+        } finally {
+            setSyncing(false)
+        }
+    }
+
+    const handleSyncAll = async () => {
+        if (!topicLink) {
+            setShowLinkModal(true)
+            return
+        }
+        if (sheets.length === 0) {
+            toast.error('No tenés planillas cargadas para sincronizar')
+            return
+        }
+        setSyncing(true)
+        let count = 0
+        try {
+            for (const s of sheets) {
+                const res = await syncFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle, s)
+                if (res?.sheetTitle && res.sheetTitle !== s.googleSheetTitle) {
+                    updateSheet(s.id, { googleSheetTitle: res.sheetTitle })
+                }
+                count++
+            }
+            toast.success(`${count} planilla(s) sincronizada(s) con Google Sheets`)
+        } catch (error) {
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSyncAll)
             } else {
                 toast.error('Error al sincronizar con Google Sheets')
             }
@@ -91,6 +125,7 @@ export default function FPTopicAttendancePage() {
         if (!sheetToDelete) return
         const targetId = sheetToDelete.id
         const targetName = sheetToDelete.especialidad || 'Planilla'
+        const targetTab = sheetToDelete.googleSheetTitle
         deleteSheet(targetId)
         setSheetToDelete(null)
 
@@ -102,6 +137,9 @@ export default function FPTopicAttendancePage() {
                     await clearFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle)
                     toast.success(`"${targetName}" eliminada y Google Sheets vaciado`)
                 } else {
+                    if (targetTab) {
+                        await deleteFPSpreadsheetTab(topicLink.spreadsheetId, targetTab)
+                    }
                     toast.success(`"${targetName}" eliminada`)
                 }
             } catch (error) {
@@ -121,16 +159,30 @@ export default function FPTopicAttendancePage() {
     const executePull = async (spreadsheetId, sheetTitle, targetSheetId = null) => {
         setPulling(true)
         try {
-            const data = await readFPTopicAttendanceSheet(spreadsheetId, sheetTitle)
-            if (!data) {
-                toast.error('No se pudieron leer los datos de la planilla')
-                return
-            }
-            const updatedId = importOrUpdateSheet(data, targetSheetId)
             if (targetSheetId) {
+                const current = sheets.find((s) => s.id === targetSheetId)
+                const tabTitle = current?.googleSheetTitle || sheetTitle
+                const data = await readFPTopicAttendanceSheet(spreadsheetId, tabTitle)
+                if (!data) {
+                    toast.error('No se pudieron leer los datos de la planilla')
+                    return
+                }
+                const updatedId = importOrUpdateSheet(data, targetSheetId)
                 setSelectedId(updatedId)
+                toast.success(`Planilla traída desde Google Sheets (${data.entries.length} clases)`)
+            } else {
+                const allSheets = await readAllFPTopicAttendanceSheets(spreadsheetId)
+                if (!allSheets || allSheets.length === 0) {
+                    toast.error('No se encontraron planillas de tema y asistencia en la hoja')
+                    return
+                }
+                let count = 0
+                for (const item of allSheets) {
+                    importOrUpdateSheet(item)
+                    count++
+                }
+                toast.success(`Se importaron/actualizaron ${count} planilla(s) desde Google Sheets`)
             }
-            toast.success(`Planilla traída desde Google Sheets (${data.entries.length} clases)`)
         } catch (error) {
             if (isAuthError(error)) {
                 notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetSheetId))
@@ -384,9 +436,23 @@ export default function FPTopicAttendancePage() {
                 title="Sincronizar con Google Sheets"
             >
                 <div className="space-y-4 p-2">
-                    <p className="text-sm text-text-secondary">
-                        Tenés {sheets.length} planillas cargadas. Seleccioná cuál querés subir a tu hoja vinculada de Google Sheets:
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border-light">
+                        <p className="text-sm text-text-secondary">
+                            Tenés {sheets.length} planillas cargadas.
+                        </p>
+                        <Button
+                            size="sm"
+                            icon={RefreshCw}
+                            loading={syncing}
+                            disabled={syncing}
+                            onClick={async () => {
+                                setShowSyncSelectModal(false)
+                                await handleSyncAll()
+                            }}
+                        >
+                            Sincronizar Todas ({sheets.length})
+                        </Button>
+                    </div>
                     <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                         {sheets.map((s) => (
                             <div

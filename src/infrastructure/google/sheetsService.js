@@ -217,6 +217,194 @@ export async function linkFPDocument(urlOrId) {
     }
 }
 
+// Convierte un número de columna (1 = A, 2 = B, ...) a su letra de columna en Sheets
+export function numberToColumnLetter(num) {
+    let col = ''
+    while (num > 0) {
+        const rem = (num - 1) % 26
+        col = String.fromCharCode(65 + rem) + col
+        num = Math.floor((num - 1) / 26)
+    }
+    return col
+}
+
+// Obtiene el valor formateado de una celda (ej: 'B4', 'AJ3') desde una matriz bidimensional de filas
+export function getCellFromGrid(rows, cellRef) {
+    if (!rows || !rows.length || !cellRef) return ''
+    const match = cellRef.match(/^([A-Z]+)(\d+)$/)
+    if (!match) return ''
+    const colLetters = match[1]
+    const rowNum = parseInt(match[2], 10)
+
+    let colIndex = 0
+    for (let i = 0; i < colLetters.length; i++) {
+        colIndex = colIndex * 26 + (colLetters.charCodeAt(i) - 64)
+    }
+    colIndex -= 1
+    const rowIndex = rowNum - 1
+
+    if (rowIndex < 0 || rowIndex >= rows.length) return ''
+    const row = rows[rowIndex]
+    if (!row || colIndex < 0 || colIndex >= row.length) return ''
+    const val = row[colIndex]
+    return val !== undefined && val !== null ? String(val) : ''
+}
+
+// Sanitiza un nombre para pestaña de Google Sheets (máx 50 caracteres, sin caracteres reservados)
+function sanitizeSheetTabTitle(rawTitle, fallback = 'Planilla') {
+    let clean = (rawTitle || fallback)
+        .replace(/[*?:/\\\[\]']/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim()
+    if (!clean) clean = fallback
+    if (clean.length > 50) clean = clean.substring(0, 50).trim()
+    return clean
+}
+
+export function buildFPAttendanceTabTitle(sheet) {
+    const parts = []
+    if (sheet.cursoNumero) parts.push(`Curso ${sheet.cursoNumero}`)
+    if (sheet.especialidad) parts.push(sheet.especialidad)
+    if (sheet.informeMes) parts.push(sheet.informeMes)
+    return sanitizeSheetTabTitle(parts.join(' - '), 'Asistencia')
+}
+
+export function buildFPTopicTabTitle(sheet) {
+    const parts = []
+    if (sheet.cursoNumero) parts.push(`Curso ${sheet.cursoNumero}`)
+    if (sheet.especialidad) parts.push(sheet.especialidad)
+    if (sheet.mesDe) parts.push(sheet.mesDe)
+    return sanitizeSheetTabTitle(parts.join(' - '), 'Tema y Asistencia')
+}
+
+export function buildFPCourseTabTitle(course) {
+    const parts = []
+    if (course.cursoNumero) parts.push(`Curso ${course.cursoNumero}`)
+    if (course.especialidad) parts.push(course.especialidad)
+    return sanitizeSheetTabTitle(parts.join(' - '), 'Ficha de Curso')
+}
+
+// Asegura que una pestaña con el nombre dado exista en la hoja. Si no existe, la crea duplicando la primera
+// pestaña (para preservar la estructura visual y de celdas) o renombrando la única pestaña genérica.
+export async function ensureFPSpreadsheetTab(spreadsheetId, desiredTitle, preferredGid = null) {
+    if (!isGoogleConfigured() || !spreadsheetId) return null
+    const safeTitle = sanitizeSheetTabTitle(desiredTitle)
+
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
+        const tabs = info.result.sheets || []
+        if (tabs.length === 0) return null
+
+        // 1. Si hay un gid específico y coincide
+        if (preferredGid !== null) {
+            const gidMatch = tabs.find((t) => t.properties.sheetId === preferredGid)
+            if (gidMatch) {
+                return { sheetId: gidMatch.properties.sheetId, sheetTitle: gidMatch.properties.title }
+            }
+        }
+
+        // 2. Si ya existe una pestaña con ese título exacto
+        const exactMatch = tabs.find((t) => t.properties.title.toLowerCase() === safeTitle.toLowerCase())
+        if (exactMatch) {
+            return { sheetId: exactMatch.properties.sheetId, sheetTitle: exactMatch.properties.title }
+        }
+
+        // 3. Si alguna pestaña contiene el número de curso
+        const courseMatch = safeTitle.match(/Curso\s+(\w+)/i)
+        if (courseMatch) {
+            const num = courseMatch[1].toLowerCase()
+            const matchByNum = tabs.find((t) => {
+                const tTitle = t.properties.title.toLowerCase()
+                return tTitle.includes(`curso ${num}`) || tTitle.includes(`curso nº ${num}`) || tTitle === num
+            })
+            if (matchByNum) {
+                return { sheetId: matchByNum.properties.sheetId, sheetTitle: matchByNum.properties.title }
+            }
+        }
+
+        // 4. Si la hoja sólo tiene 1 pestaña y es genérica ("Hoja 1", "Sheet1", etc.)
+        const firstTab = tabs[0]
+        const genericNames = ['hoja 1', 'hoja1', 'sheet1', 'sheet 1', 'asistencia', 'tema y asistencia', 'ficha de curso']
+        if (tabs.length === 1 && genericNames.includes(firstTab.properties.title.toLowerCase())) {
+            await gapi.client.sheets.spreadsheets.batchUpdate({
+                spreadsheetId,
+                resource: {
+                    requests: [
+                        {
+                            updateSheetProperties: {
+                                properties: {
+                                    sheetId: firstTab.properties.sheetId,
+                                    title: safeTitle,
+                                },
+                                fields: 'title',
+                            },
+                        },
+                    ],
+                },
+            })
+            return { sheetId: firstTab.properties.sheetId, sheetTitle: safeTitle }
+        }
+
+        // 5. Duplicar la primera pestaña para heredar el diseño oficial
+        let finalTitle = safeTitle
+        let counter = 1
+        while (tabs.some((t) => t.properties.title.toLowerCase() === finalTitle.toLowerCase())) {
+            counter++
+            finalTitle = `${safeTitle.substring(0, 45)} (${counter})`
+        }
+
+        const dupResponse = await gapi.client.sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            resource: {
+                requests: [
+                    {
+                        duplicateSheet: {
+                            sourceSheetId: firstTab.properties.sheetId,
+                            newSheetName: finalTitle,
+                        },
+                    },
+                ],
+            },
+        })
+
+        const createdProps = dupResponse.result.replies[0].duplicateSheet.properties
+        return { sheetId: createdProps.sheetId, sheetTitle: createdProps.title }
+    } catch (error) {
+        console.error('[SheetsService] Error al asegurar pestaña en Google Sheets:', error)
+        throw error
+    }
+}
+
+// Elimina una pestaña de Google Sheets cuando se elimina un curso o planilla
+export async function deleteFPSpreadsheetTab(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId || !sheetTitle) return false
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
+        const tabs = info.result.sheets || []
+        if (tabs.length <= 1) return false
+
+        const match = tabs.find((t) => t.properties.title.toLowerCase() === sheetTitle.toLowerCase())
+        if (!match) return false
+
+        await gapi.client.sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            resource: {
+                requests: [
+                    {
+                        deleteSheet: {
+                            sheetId: match.properties.sheetId,
+                        },
+                    },
+                ],
+            },
+        })
+        return true
+    } catch (error) {
+        console.warn('[SheetsService] No se pudo borrar la pestaña de Google Sheets:', error)
+        return false
+    }
+}
+
 // Mapeo de celdas — Ficha de Curso
 const FP_COURSE_CELL_MAP = {
     cfpNumero: 'O1',
@@ -245,13 +433,112 @@ const FP_COURSE_STUDENT_COLUMNS = {
     contacto: 'S',
 }
 
+// Parsea los datos de una Ficha de Curso desde una matriz de filas
+export function parseFPCourseGrid(rows, sheetTitle = '') {
+    const headerData = {}
+    Object.entries(FP_COURSE_CELL_MAP).forEach(([field, cell]) => {
+        headerData[field] = getCellFromGrid(rows, cell)
+    })
+
+    const horarios = {}
+    Object.entries(FP_COURSE_HORARIO_CELLS).forEach(([dia, cell]) => {
+        horarios[dia] = getCellFromGrid(rows, cell)
+    })
+
+    const matricula = {}
+    Object.entries(FP_COURSE_MATRICULA_CELLS).forEach(([campo, cell]) => {
+        matricula[campo] = getCellFromGrid(rows, cell)
+    })
+
+    const students = []
+    for (let r = FP_COURSE_STUDENT_START_ROW; r < FP_COURSE_STUDENT_START_ROW + 35; r++) {
+        const apellidosNombres = getCellFromGrid(rows, `E${r}`)
+        const documentoNumero = getCellFromGrid(rows, `C${r}`)
+        if (!apellidosNombres && !documentoNumero) continue
+
+        const student = { id: crypto.randomUUID() }
+        Object.entries(FP_COURSE_STUDENT_COLUMNS).forEach(([field, col]) => {
+            student[field] = getCellFromGrid(rows, `${col}${r}`)
+        })
+        students.push(student)
+    }
+
+    return {
+        ...headerData,
+        horarios,
+        matricula,
+        students,
+        googleSheetTitle: sheetTitle,
+    }
+}
+
+// Leer Ficha de Curso de una pestaña específica
+export async function readFPCourseSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return null
+    try {
+        const response = await gapi.client.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetTitle}!A1:V50`,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const rows = response.result.values || []
+        return parseFPCourseGrid(rows, sheetTitle)
+    } catch (error) {
+        console.error('[SheetsService] Error al leer Ficha de Curso:', error)
+        throw error
+    }
+}
+
+// Leer TODAS las Fichas de Curso (todas las pestañas de la hoja vinculada)
+export async function readAllFPCourseSheets(spreadsheetId) {
+    if (!isGoogleConfigured() || !spreadsheetId) return []
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
+        const tabs = info.result.sheets || []
+        if (tabs.length === 0) return []
+
+        const ranges = tabs.map((t) => `${t.properties.title}!A1:V50`)
+        const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
+            spreadsheetId,
+            ranges,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const valueRanges = batchResponse.result.valueRanges || []
+
+        const results = []
+        valueRanges.forEach((vr, idx) => {
+            const tabTitle = tabs[idx]?.properties?.title || ''
+            const rows = vr.values || []
+            const parsed = parseFPCourseGrid(rows, tabTitle)
+
+            const hasData =
+                Boolean(parsed.cursoNumero?.trim()) ||
+                Boolean(parsed.especialidad?.trim()) ||
+                Boolean(parsed.cfpNumero?.trim()) ||
+                parsed.students.length > 0
+
+            if (hasData || tabs.length === 1) {
+                results.push(parsed)
+            }
+        })
+        return results
+    } catch (error) {
+        console.error('[SheetsService] Error al leer todas las Fichas de Curso:', error)
+        throw error
+    }
+}
+
 // Sincronizar Ficha de Curso hacia su archivo vinculado (mail merge celda por celda)
 export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
     if (!isGoogleConfigured() || !spreadsheetId) return false
 
+    const desiredTitle = buildFPCourseTabTitle(course)
+    const tabInfo = await ensureFPSpreadsheetTab(spreadsheetId, course.googleSheetTitle || desiredTitle)
+    const effectiveSheetTitle = tabInfo ? tabInfo.sheetTitle : (sheetTitle || desiredTitle)
+
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_COURSE_CELL_MAP).forEach(([field, cell]) => pushCell(cell, course[field]))
         Object.entries(FP_COURSE_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, course.horarios[dia]))
@@ -275,7 +562,7 @@ export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
             resource: { valueInputOption: 'RAW', data },
         })
 
-        return true
+        return { success: true, sheetTitle: effectiveSheetTitle }
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Ficha de Curso:', error)
         throw error
@@ -338,9 +625,13 @@ const FP_TOPIC_ENTRY_COLUMNS = {
 export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
     if (!isGoogleConfigured() || !spreadsheetId) return false
 
+    const desiredTitle = buildFPTopicTabTitle(sheet)
+    const tabInfo = await ensureFPSpreadsheetTab(spreadsheetId, sheet.googleSheetTitle || desiredTitle)
+    const effectiveSheetTitle = tabInfo ? tabInfo.sheetTitle : (sheetTitle || desiredTitle)
+
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_TOPIC_CELL_MAP).forEach(([field, cell]) => pushCell(cell, sheet[field]))
         Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, sheet.horarios[dia]))
@@ -361,7 +652,7 @@ export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, shee
             resource: { valueInputOption: 'RAW', data },
         })
 
-        return true
+        return { success: true, sheetTitle: effectiveSheetTitle }
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Tema y Asistencia:', error)
         throw error
@@ -396,40 +687,49 @@ export async function clearFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
     }
 }
 
-// Convierte un número de columna (1 = A, 2 = B, ...) a su letra de columna en Sheets
-function numberToColumnLetter(num) {
-    let col = ''
-    while (num > 0) {
-        const rem = (num - 1) % 26
-        col = String.fromCharCode(65 + rem) + col
-        num = Math.floor((num - 1) / 26)
+// Parsea una cuadrícula de Tema y Asistencia
+export function parseFPTopicGrid(rows, sheetTitle = '') {
+    const headerData = {}
+    Object.entries(FP_TOPIC_CELL_MAP).forEach(([field, cell]) => {
+        headerData[field] = getCellFromGrid(rows, cell)
+    })
+
+    const horarios = {}
+    Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => {
+        horarios[dia] = getCellFromGrid(rows, cell)
+    })
+
+    const entries = []
+    for (let r = FP_TOPIC_START_ROW; r <= Math.max(rows.length, FP_TOPIC_START_ROW + 30); r++) {
+        const fecha = getCellFromGrid(rows, `A${r}`)
+        const tema = getCellFromGrid(rows, `C${r}`)
+        const tiempoEstimado = getCellFromGrid(rows, `I${r}`)
+        const firmaInstructor = getCellFromGrid(rows, `K${r}`)
+        const observaciones = getCellFromGrid(rows, `M${r}`)
+        const firmaDirector = getCellFromGrid(rows, `O${r}`)
+
+        if (fecha || tema || tiempoEstimado || observaciones) {
+            entries.push({
+                id: crypto.randomUUID(),
+                fecha,
+                tema,
+                tiempoEstimado,
+                firmaInstructor,
+                observaciones,
+                firmaDirector,
+            })
+        }
     }
-    return col
+
+    return {
+        ...headerData,
+        horarios,
+        entries,
+        googleSheetTitle: sheetTitle,
+    }
 }
 
-// Obtiene el valor formateado de una celda (ej: 'B4', 'AJ3') desde una matriz bidimensional de filas
-function getCellFromGrid(rows, cellRef) {
-    if (!rows || !rows.length || !cellRef) return ''
-    const match = cellRef.match(/^([A-Z]+)(\d+)$/)
-    if (!match) return ''
-    const colLetters = match[1]
-    const rowNum = parseInt(match[2], 10)
-
-    let colIndex = 0
-    for (let i = 0; i < colLetters.length; i++) {
-        colIndex = colIndex * 26 + (colLetters.charCodeAt(i) - 64)
-    }
-    colIndex -= 1
-    const rowIndex = rowNum - 1
-
-    if (rowIndex < 0 || rowIndex >= rows.length) return ''
-    const row = rows[rowIndex]
-    if (!row || colIndex < 0 || colIndex >= row.length) return ''
-    const val = row[colIndex]
-    return val !== undefined && val !== null ? String(val) : ''
-}
-
-// Leer Tema y Asistencia desde su archivo vinculado en Google Sheets
+// Leer Tema y Asistencia desde su archivo vinculado en Google Sheets (pestaña específica)
 export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
     if (!isGoogleConfigured() || !spreadsheetId) return null
 
@@ -440,46 +740,50 @@ export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
-
-        const headerData = {}
-        Object.entries(FP_TOPIC_CELL_MAP).forEach(([field, cell]) => {
-            headerData[field] = getCellFromGrid(rows, cell)
-        })
-
-        const horarios = {}
-        Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => {
-            horarios[dia] = getCellFromGrid(rows, cell)
-        })
-
-        const entries = []
-        for (let r = FP_TOPIC_START_ROW; r <= Math.max(rows.length, FP_TOPIC_START_ROW + 30); r++) {
-            const fecha = getCellFromGrid(rows, `A${r}`)
-            const tema = getCellFromGrid(rows, `C${r}`)
-            const tiempoEstimado = getCellFromGrid(rows, `I${r}`)
-            const firmaInstructor = getCellFromGrid(rows, `K${r}`)
-            const observaciones = getCellFromGrid(rows, `M${r}`)
-            const firmaDirector = getCellFromGrid(rows, `O${r}`)
-
-            if (fecha || tema || tiempoEstimado || observaciones) {
-                entries.push({
-                    id: crypto.randomUUID(),
-                    fecha,
-                    tema,
-                    tiempoEstimado,
-                    firmaInstructor,
-                    observaciones,
-                    firmaDirector,
-                })
-            }
-        }
-
-        return {
-            ...headerData,
-            horarios,
-            entries,
-        }
+        return parseFPTopicGrid(rows, sheetTitle)
     } catch (error) {
         console.error('[SheetsService] Error al leer Tema y Asistencia:', error)
+        throw error
+    }
+}
+
+// Leer TODAS las planillas de Tema y Asistencia en el archivo vinculado
+export async function readAllFPTopicAttendanceSheets(spreadsheetId) {
+    if (!isGoogleConfigured() || !spreadsheetId) return []
+
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
+        const tabs = info.result.sheets || []
+        if (tabs.length === 0) return []
+
+        const ranges = tabs.map((t) => `${t.properties.title}!A1:P60`)
+        const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
+            spreadsheetId,
+            ranges,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const valueRanges = batchResponse.result.valueRanges || []
+
+        const results = []
+        valueRanges.forEach((vr, idx) => {
+            const tabTitle = tabs[idx]?.properties?.title || ''
+            const rows = vr.values || []
+            const parsed = parseFPTopicGrid(rows, tabTitle)
+
+            const hasData =
+                Boolean(parsed.cursoNumero?.trim()) ||
+                Boolean(parsed.especialidad?.trim()) ||
+                Boolean(parsed.cfpNumero?.trim()) ||
+                parsed.entries.length > 0
+
+            if (hasData || tabs.length === 1) {
+                results.push(parsed)
+            }
+        })
+
+        return results
+    } catch (error) {
+        console.error('[SheetsService] Error al leer todas las planillas de Tema y Asistencia:', error)
         throw error
     }
 }
@@ -513,9 +817,13 @@ const FP_ATTENDANCE_MOVIMIENTO_CELLS = {
 export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
     if (!isGoogleConfigured() || !spreadsheetId) return false
 
+    const desiredTitle = buildFPAttendanceTabTitle(sheet)
+    const tabInfo = await ensureFPSpreadsheetTab(spreadsheetId, sheet.googleSheetTitle || desiredTitle)
+    const effectiveSheetTitle = tabInfo ? tabInfo.sheetTitle : (sheetTitle || desiredTitle)
+
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_ATTENDANCE_CELL_MAP).forEach(([field, cell]) => pushCell(cell, sheet[field]))
         Object.entries(FP_ATTENDANCE_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, sheet.horarios[dia]))
@@ -567,7 +875,7 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
             resource: { valueInputOption: 'RAW', data },
         })
 
-        return true
+        return { success: true, sheetTitle: effectiveSheetTitle }
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Asistencia de Alumnos:', error)
         throw error
@@ -615,7 +923,73 @@ export async function clearFPAttendanceSheet(spreadsheetId, sheetTitle) {
     }
 }
 
-// Leer Asistencia de Alumnos desde su archivo vinculado en Google Sheets
+// Parsea los datos de Asistencia de Alumnos desde una matriz de filas
+export function parseFPAttendanceGrid(rows, sheetTitle = '') {
+    const headerData = {}
+    Object.entries(FP_ATTENDANCE_CELL_MAP).forEach(([field, cell]) => {
+        headerData[field] = getCellFromGrid(rows, cell)
+    })
+
+    const horarios = {}
+    Object.entries(FP_ATTENDANCE_HORARIO_CELLS).forEach(([dia, cell]) => {
+        horarios[dia] = getCellFromGrid(rows, cell)
+    })
+
+    const movimiento = {}
+    Object.entries(FP_ATTENDANCE_MOVIMIENTO_CELLS).forEach(([campo, cell]) => {
+        movimiento[campo] = getCellFromGrid(rows, cell)
+    })
+
+    const students = []
+    for (let r = FP_ATTENDANCE_STUDENT_START_ROW; r < FP_ATTENDANCE_BAJA_START_ROW; r++) {
+        const sexo = getCellFromGrid(rows, `B${r}`)
+        const apellidosNombres = getCellFromGrid(rows, `C${r}`)
+        if (!apellidosNombres && !sexo) continue
+
+        const days = {}
+        for (let d = 1; d <= 31; d++) {
+            const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
+            days[d] = getCellFromGrid(rows, `${colLetter}${r}`)
+        }
+        const totalAus = getCellFromGrid(rows, `AK${r}`)
+        const totalPres = getCellFromGrid(rows, `AL${r}`)
+        const temasTratados = getCellFromGrid(rows, `AM${r}`)
+
+        students.push({
+            id: crypto.randomUUID(),
+            sexo,
+            apellidosNombres,
+            days,
+            totalAus,
+            totalPres,
+            temasTratados,
+        })
+    }
+
+    const bajas = []
+    for (let r = FP_ATTENDANCE_BAJA_START_ROW; r <= 27; r++) {
+        const sexo = getCellFromGrid(rows, `AM${r}`)
+        const apellidosNombres = getCellFromGrid(rows, `AN${r}`)
+        if (apellidosNombres || sexo) {
+            bajas.push({
+                id: crypto.randomUUID(),
+                sexo,
+                apellidosNombres,
+            })
+        }
+    }
+
+    return {
+        ...headerData,
+        horarios,
+        movimiento,
+        students,
+        bajas,
+        googleSheetTitle: sheetTitle,
+    }
+}
+
+// Leer Asistencia de Alumnos desde su archivo vinculado en Google Sheets (pestaña específica)
 export async function readFPAttendanceSheet(spreadsheetId, sheetTitle) {
     if (!isGoogleConfigured() || !spreadsheetId) return null
 
@@ -626,70 +1000,50 @@ export async function readFPAttendanceSheet(spreadsheetId, sheetTitle) {
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
-
-        const headerData = {}
-        Object.entries(FP_ATTENDANCE_CELL_MAP).forEach(([field, cell]) => {
-            headerData[field] = getCellFromGrid(rows, cell)
-        })
-
-        const horarios = {}
-        Object.entries(FP_ATTENDANCE_HORARIO_CELLS).forEach(([dia, cell]) => {
-            horarios[dia] = getCellFromGrid(rows, cell)
-        })
-
-        const movimiento = {}
-        Object.entries(FP_ATTENDANCE_MOVIMIENTO_CELLS).forEach(([campo, cell]) => {
-            movimiento[campo] = getCellFromGrid(rows, cell)
-        })
-
-        const students = []
-        for (let r = FP_ATTENDANCE_STUDENT_START_ROW; r < FP_ATTENDANCE_BAJA_START_ROW; r++) {
-            const sexo = getCellFromGrid(rows, `B${r}`)
-            const apellidosNombres = getCellFromGrid(rows, `C${r}`)
-            if (!apellidosNombres && !sexo) continue
-
-            const days = {}
-            for (let d = 1; d <= 31; d++) {
-                const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
-                days[d] = getCellFromGrid(rows, `${colLetter}${r}`)
-            }
-            const totalAus = getCellFromGrid(rows, `AK${r}`)
-            const totalPres = getCellFromGrid(rows, `AL${r}`)
-            const temasTratados = getCellFromGrid(rows, `AM${r}`)
-
-            students.push({
-                id: crypto.randomUUID(),
-                sexo,
-                apellidosNombres,
-                days,
-                totalAus,
-                totalPres,
-                temasTratados,
-            })
-        }
-
-        const bajas = []
-        for (let r = FP_ATTENDANCE_BAJA_START_ROW; r <= 27; r++) {
-            const sexo = getCellFromGrid(rows, `AM${r}`)
-            const apellidosNombres = getCellFromGrid(rows, `AN${r}`)
-            if (apellidosNombres || sexo) {
-                bajas.push({
-                    id: crypto.randomUUID(),
-                    sexo,
-                    apellidosNombres,
-                })
-            }
-        }
-
-        return {
-            ...headerData,
-            horarios,
-            movimiento,
-            students,
-            bajas,
-        }
+        return parseFPAttendanceGrid(rows, sheetTitle)
     } catch (error) {
         console.error('[SheetsService] Error al leer Asistencia de Alumnos:', error)
+        throw error
+    }
+}
+
+// Leer TODAS las planillas de Asistencia de Alumnos en el archivo vinculado
+export async function readAllFPAttendanceSheets(spreadsheetId) {
+    if (!isGoogleConfigured() || !spreadsheetId) return []
+
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
+        const tabs = info.result.sheets || []
+        if (tabs.length === 0) return []
+
+        const ranges = tabs.map((t) => `${t.properties.title}!A1:AO50`)
+        const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
+            spreadsheetId,
+            ranges,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const valueRanges = batchResponse.result.valueRanges || []
+
+        const results = []
+        valueRanges.forEach((vr, idx) => {
+            const tabTitle = tabs[idx]?.properties?.title || ''
+            const rows = vr.values || []
+            const parsed = parseFPAttendanceGrid(rows, tabTitle)
+
+            const hasData =
+                Boolean(parsed.cursoNumero?.trim()) ||
+                Boolean(parsed.especialidad?.trim()) ||
+                Boolean(parsed.centroNumero?.trim()) ||
+                parsed.students.length > 0
+
+            if (hasData || tabs.length === 1) {
+                results.push(parsed)
+            }
+        })
+
+        return results
+    } catch (error) {
+        console.error('[SheetsService] Error al leer todas las planillas de asistencia:', error)
         throw error
     }
 }

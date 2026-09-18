@@ -4,10 +4,10 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
-import { syncFPCourseSheet, clearFPCourseSheet } from '../../infrastructure/google/sheetsService'
+import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -30,11 +30,18 @@ export default function FPCoursesPage() {
     const addStudent = useFPCourseStore((s) => s.addStudent)
     const updateStudent = useFPCourseStore((s) => s.updateStudent)
     const deleteStudent = useFPCourseStore((s) => s.deleteStudent)
+    const importOrUpdateCourse = useFPCourseStore((s) => s.importOrUpdateCourse)
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = courses.find((c) => c.id === selectedId)
     const courseLink = useFPGoogleLinksStore((s) => s.links.course)
+    const setLink = useFPGoogleLinksStore((s) => s.setLink)
+
     const [syncing, setSyncing] = useState(false)
+    const [pulling, setPulling] = useState(false)
+    const [showLinkModal, setShowLinkModal] = useState(false)
+    const [linkInput, setLinkInput] = useState('')
+    const [linking, setLinking] = useState(false)
 
     // Estados para confirmación de eliminación y selección de sincronización
     const [courseToDelete, setCourseToDelete] = useState(null)
@@ -42,12 +49,15 @@ export default function FPCoursesPage() {
 
     const handleSyncSingle = async (courseToSync) => {
         if (!courseLink) {
-            toast.error('Primero vinculá el archivo de Ficha de Curso en Configuración')
+            setShowLinkModal(true)
             return
         }
         setSyncing(true)
         try {
-            await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, courseToSync)
+            const res = await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, courseToSync)
+            if (res?.sheetTitle && res.sheetTitle !== courseToSync.googleSheetTitle) {
+                updateCourse(courseToSync.id, { googleSheetTitle: res.sheetTitle })
+            }
             toast.success(`"${courseToSync.especialidad || 'Curso'}" sincronizado con Google Sheets`)
         } catch (error) {
             if (isAuthError(error)) {
@@ -60,9 +70,40 @@ export default function FPCoursesPage() {
         }
     }
 
+    const handleSyncAll = async () => {
+        if (!courseLink) {
+            setShowLinkModal(true)
+            return
+        }
+        if (courses.length === 0) {
+            toast.error('No tenés cursos cargados para sincronizar')
+            return
+        }
+        setSyncing(true)
+        let count = 0
+        try {
+            for (const c of courses) {
+                const res = await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, c)
+                if (res?.sheetTitle && res.sheetTitle !== c.googleSheetTitle) {
+                    updateCourse(c.id, { googleSheetTitle: res.sheetTitle })
+                }
+                count++
+            }
+            toast.success(`${count} curso(s) sincronizado(s) con Google Sheets`)
+        } catch (error) {
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleSyncAll)
+            } else {
+                toast.error('Error al sincronizar con Google Sheets')
+            }
+        } finally {
+            setSyncing(false)
+        }
+    }
+
     const handleSyncGeneral = async () => {
         if (!courseLink) {
-            toast.error('Primero vinculá el archivo de Ficha de Curso en Configuración')
+            setShowLinkModal(true)
             return
         }
         if (courses.length === 0) {
@@ -85,6 +126,7 @@ export default function FPCoursesPage() {
         if (!courseToDelete) return
         const targetId = courseToDelete.id
         const targetName = courseToDelete.especialidad || 'Curso'
+        const targetTab = courseToDelete.googleSheetTitle
         deleteCourse(targetId)
         setCourseToDelete(null)
 
@@ -96,6 +138,9 @@ export default function FPCoursesPage() {
                     await clearFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle)
                     toast.success(`"${targetName}" eliminado y Google Sheets vaciado`)
                 } else {
+                    if (targetTab) {
+                        await deleteFPSpreadsheetTab(courseLink.spreadsheetId, targetTab)
+                    }
                     toast.success(`"${targetName}" eliminado`)
                 }
             } catch (error) {
@@ -112,19 +157,100 @@ export default function FPCoursesPage() {
         }
     }
 
+    const executePull = async (spreadsheetId, sheetTitle, targetCourseId = null) => {
+        setPulling(true)
+        try {
+            if (targetCourseId) {
+                const current = courses.find((c) => c.id === targetCourseId)
+                const tabTitle = current?.googleSheetTitle || sheetTitle
+                const data = await readFPCourseSheet(spreadsheetId, tabTitle)
+                if (!data) {
+                    toast.error('No se pudieron leer los datos del curso')
+                    return
+                }
+                const updatedId = importOrUpdateCourse(data, targetCourseId)
+                setSelectedId(updatedId)
+                toast.success(`Curso traído desde Google Sheets (${data.students.length} estudiantes)`)
+            } else {
+                const allCourses = await readAllFPCourseSheets(spreadsheetId)
+                if (!allCourses || allCourses.length === 0) {
+                    toast.error('No se encontraron cursos en la hoja')
+                    return
+                }
+                let count = 0
+                for (const item of allCourses) {
+                    importOrUpdateCourse(item)
+                    count++
+                }
+                toast.success(`Se importaron/actualizaron ${count} curso(s) desde Google Sheets`)
+            }
+        } catch (error) {
+            if (isAuthError(error)) {
+                notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetCourseId))
+            } else {
+                toast.error('Error al traer los datos desde Google Sheets')
+            }
+        } finally {
+            setPulling(false)
+        }
+    }
+
+    const handlePullFromSheets = (targetCourseId = null) => {
+        if (!courseLink) {
+            setShowLinkModal(true)
+            return
+        }
+        if (!window.confirm('Esto va a traer los datos de los cursos desde Google Sheets y actualizará tu copia local. ¿Continuar?')) {
+            return
+        }
+        executePull(courseLink.spreadsheetId, courseLink.sheetTitle, targetCourseId)
+    }
+
+    const handleLinkAndPull = async () => {
+        if (!linkInput.trim()) {
+            toast.error('Pegá el link o ID de la hoja de cálculo')
+            return
+        }
+        setLinking(true)
+        try {
+            const result = await linkFPDocument(linkInput.trim())
+            setLink('course', result)
+            setShowLinkModal(false)
+            setLinkInput('')
+            toast.success('Archivo vinculado correctamente')
+            await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
+        } catch (error) {
+            toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+        } finally {
+            setLinking(false)
+        }
+    }
+
     if (selected) {
         return (
             <div className="space-y-6 animate-fade-in">
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
                     <h1 className="text-xl font-bold text-text-primary flex-1">
                         Ficha de Curso {selected.especialidad ? `— ${selected.especialidad}` : ''}
                     </h1>
-                    <Button icon={RefreshCw} loading={syncing} disabled={syncing} onClick={() => handleSyncSingle(selected)}>
-                        Sincronizar con Sheets
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            icon={CloudDownload}
+                            loading={pulling}
+                            disabled={pulling || syncing}
+                            onClick={() => handlePullFromSheets(selected.id)}
+                            title="Recarga los datos de este curso desde Google Sheets"
+                        >
+                            Cargar de Sheets
+                        </Button>
+                        <Button icon={RefreshCw} loading={syncing} disabled={syncing || pulling} onClick={() => handleSyncSingle(selected)}>
+                            Sincronizar con Sheets
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Datos generales del curso */}
@@ -248,9 +374,19 @@ export default function FPCoursesPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <Button
+                        variant="outline"
+                        icon={CloudDownload}
+                        loading={pulling}
+                        disabled={pulling || syncing}
+                        onClick={() => handlePullFromSheets()}
+                        title="Descarga los cursos guardados en Google Sheets a este dispositivo"
+                    >
+                        Traer de Google Sheets
+                    </Button>
+                    <Button
                         icon={RefreshCw}
                         loading={syncing}
-                        disabled={syncing}
+                        disabled={syncing || pulling}
                         onClick={handleSyncGeneral}
                         title="Sincroniza los datos con Google Sheets"
                     >
@@ -322,9 +458,23 @@ export default function FPCoursesPage() {
                 title="Sincronizar con Google Sheets"
             >
                 <div className="space-y-4 p-2">
-                    <p className="text-sm text-text-secondary">
-                        Tenés {courses.length} cursos cargados. Seleccioná cuál querés subir a tu hoja vinculada de Google Sheets:
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border-light">
+                        <p className="text-sm text-text-secondary">
+                            Tenés {courses.length} cursos cargados.
+                        </p>
+                        <Button
+                            size="sm"
+                            icon={RefreshCw}
+                            loading={syncing}
+                            disabled={syncing}
+                            onClick={async () => {
+                                setShowSyncSelectModal(false)
+                                await handleSyncAll()
+                            }}
+                        >
+                            Sincronizar Todos ({courses.length})
+                        </Button>
+                    </div>
                     <div className="space-y-2 max-h-[50vh] overflow-y-auto">
                         {courses.map((c) => (
                             <div
@@ -357,6 +507,37 @@ export default function FPCoursesPage() {
                     <div className="flex justify-end pt-2">
                         <Button variant="ghost" onClick={() => setShowSyncSelectModal(false)}>
                             Cerrar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Modal para vincular la hoja en este dispositivo si todavía no se vinculó */}
+            <Modal
+                isOpen={showLinkModal}
+                onClose={() => setShowLinkModal(false)}
+                title="Vincular Fichas de Curso"
+            >
+                <div className="space-y-4 p-2">
+                    <p className="text-sm text-text-secondary">
+                        Para sincronizar con este dispositivo (ej. tu celular), pegá el link o ID de la hoja de cálculo de Google Sheets correspondiente:
+                    </p>
+                    <Input
+                        placeholder="https://docs.google.com/spreadsheets/d/... o ID"
+                        value={linkInput}
+                        onChange={(e) => setLinkInput(e.target.value)}
+                    />
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="ghost" onClick={() => setShowLinkModal(false)}>
+                            Cancelar
+                        </Button>
+                        <Button
+                            icon={Link2}
+                            loading={linking}
+                            disabled={linking}
+                            onClick={handleLinkAndPull}
+                        >
+                            Vincular y Descargar
                         </Button>
                     </div>
                 </div>

@@ -13,6 +13,7 @@ const emptySheet = () => ({
     horarios: { lunes: '', martes: '', miercoles: '', jueves: '', viernes: '', sabado: '' },
     instructor: '',
     entries: [],
+    googleSheetTitle: '',
 })
 
 const emptyEntry = () => ({
@@ -41,8 +42,8 @@ const useFPTopicAttendanceStore = create(
             })),
 
             // Sincronización bidireccional (PC ↔ Celular):
-            // Importa una planilla leída desde Google Sheets. Si ya existe en este dispositivo
-            // (mismo CFP y Curso), actualiza sus datos; si el dispositivo inicia limpio, la agrega a la lista.
+            // Importa una planilla leída desde Google Sheets. Si ya existe en este dispositivo,
+            // actualiza sus datos; si no existe, la agrega a la lista.
             importOrUpdateSheet: (sheetData, targetId = null) => {
                 const currentSheets = get().sheets
                 let updatedId = targetId
@@ -54,9 +55,28 @@ const useFPTopicAttendanceStore = create(
                     return targetId
                 }
 
-                const existingIndex = currentSheets.findIndex(
-                    (s) => s.cfpNumero && s.cursoNumero && s.cfpNumero === sheetData.cfpNumero && s.cursoNumero === sheetData.cursoNumero
-                )
+                const existingIndex = currentSheets.findIndex((s) => {
+                    if (s.googleSheetTitle && sheetData.googleSheetTitle && s.googleSheetTitle === sheetData.googleSheetTitle) {
+                        return true
+                    }
+                    const sCurso = (s.cursoNumero || '').trim().toLowerCase()
+                    const dCurso = (sheetData.cursoNumero || '').trim().toLowerCase()
+                    const sMes = (s.mesDe || '').trim().toLowerCase()
+                    const dMes = (sheetData.mesDe || '').trim().toLowerCase()
+                    const sEsp = (s.especialidad || '').trim().toLowerCase()
+                    const dEsp = (sheetData.especialidad || '').trim().toLowerCase()
+
+                    if (sCurso && dCurso && sCurso === dCurso) {
+                        if (!sMes || !dMes || sMes === dMes) return true
+                    }
+                    if (sEsp && dEsp && sEsp === dEsp) {
+                        if (!sMes || !dMes || sMes === dMes) return true
+                    }
+                    if (s.cfpNumero && sheetData.cfpNumero && s.cfpNumero === sheetData.cfpNumero && sCurso && dCurso && sCurso === dCurso) {
+                        return true
+                    }
+                    return false
+                })
 
                 if (existingIndex >= 0) {
                     updatedId = currentSheets[existingIndex].id
