@@ -19,6 +19,8 @@ const emptyCourse = () => ({
     matricula: { v: '', m: '', x: '' },
     students: [],
     googleSheetTitle: '',
+    spreadsheetId: '',
+    spreadsheetUrl: '',
 })
 
 const emptyStudent = () => ({

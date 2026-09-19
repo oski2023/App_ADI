@@ -44,20 +44,90 @@ export default function FPCoursesPage() {
     const [linkInput, setLinkInput] = useState('')
     const [linking, setLinking] = useState(false)
 
+    // Modal para Nuevo Curso (con link o en blanco)
+    const [showNewCourseModal, setShowNewCourseModal] = useState(false)
+    const [newCourseLinkInput, setNewCourseLinkInput] = useState('')
+    const [creatingFromLink, setCreatingFromLink] = useState(false)
+
     // Estados para confirmación de eliminación y selección de sincronización
     const [courseToDelete, setCourseToDelete] = useState(null)
     const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
 
+    const handleCreateCourseFromLink = async () => {
+        if (!newCourseLinkInput.trim()) {
+            toast.error('Pegá el link o ID de la hoja de cálculo del curso')
+            return
+        }
+        setCreatingFromLink(true)
+        try {
+            const linkRes = await linkFPDocument(newCourseLinkInput.trim())
+            let courseData = null
+            try {
+                courseData = await readFPCourseSheet(linkRes.spreadsheetId, linkRes.sheetTitle)
+            } catch (err) {
+                console.warn('[FPCoursesPage] Error leyendo hoja específica, buscando pestaña con datos:', err)
+            }
+
+            if (!courseData) {
+                const all = await readAllFPCourseSheets(linkRes.spreadsheetId)
+                if (all && all.length > 0) {
+                    courseData = all[0]
+                }
+            }
+
+            if (courseData) {
+                courseData.spreadsheetId = linkRes.spreadsheetId
+                courseData.spreadsheetUrl = newCourseLinkInput.trim()
+                courseData.googleSheetTitle = linkRes.sheetTitle || courseData.googleSheetTitle
+                const newId = importOrUpdateCourse(courseData)
+                if (!courseLink) {
+                    setLink('course', linkRes)
+                }
+                setShowNewCourseModal(false)
+                setNewCourseLinkInput('')
+                setSelectedId(newId)
+                toast.success(`Curso Nº ${courseData.cursoNumero || '—'} importado con éxito (${courseData.students?.length || 0} estudiantes)`)
+            } else {
+                const newId = addCourse({
+                    spreadsheetId: linkRes.spreadsheetId,
+                    spreadsheetUrl: newCourseLinkInput.trim(),
+                    googleSheetTitle: linkRes.sheetTitle,
+                })
+                if (!courseLink) {
+                    setLink('course', linkRes)
+                }
+                setShowNewCourseModal(false)
+                setNewCourseLinkInput('')
+                setSelectedId(newId)
+                toast.success('Curso creado y vinculado a la hoja de Google Sheets')
+            }
+        } catch (error) {
+            console.error(error)
+            toast.error('No se pudo vincular la hoja. Verificá el link y tus permisos de Google Drive.')
+        } finally {
+            setCreatingFromLink(false)
+        }
+    }
+
+    const handleCreateBlankCourse = () => {
+        const newId = addCourse()
+        setShowNewCourseModal(false)
+        setNewCourseLinkInput('')
+        setSelectedId(newId)
+    }
+
     const handleSyncSingle = async (courseToSync) => {
-        if (!courseLink) {
+        const targetSpreadsheetId = courseToSync.spreadsheetId || courseLink?.spreadsheetId
+        const targetSheetTitle = courseToSync.googleSheetTitle || courseLink?.sheetTitle
+        if (!targetSpreadsheetId) {
             setShowLinkModal(true)
             return
         }
         setSyncing(true)
         try {
-            const res = await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, courseToSync)
+            const res = await syncFPCourseSheet(targetSpreadsheetId, targetSheetTitle, courseToSync)
             if (res?.sheetTitle && res.sheetTitle !== courseToSync.googleSheetTitle) {
-                updateCourse(courseToSync.id, { googleSheetTitle: res.sheetTitle })
+                updateCourse(courseToSync.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
             }
             toast.success(`"${courseToSync.especialidad || 'Curso'}" sincronizado con Google Sheets`)
         } catch (error) {
@@ -72,10 +142,6 @@ export default function FPCoursesPage() {
     }
 
     const handleSyncAll = async () => {
-        if (!courseLink) {
-            setShowLinkModal(true)
-            return
-        }
         if (courses.length === 0) {
             toast.error('No tenés cursos cargados para sincronizar')
             return
@@ -84,11 +150,18 @@ export default function FPCoursesPage() {
         let count = 0
         try {
             for (const c of courses) {
-                const res = await syncFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle, c)
+                const targetSpreadsheetId = c.spreadsheetId || courseLink?.spreadsheetId
+                const targetSheetTitle = c.googleSheetTitle || courseLink?.sheetTitle
+                if (!targetSpreadsheetId) continue
+                const res = await syncFPCourseSheet(targetSpreadsheetId, targetSheetTitle, c)
                 if (res?.sheetTitle && res.sheetTitle !== c.googleSheetTitle) {
-                    updateCourse(c.id, { googleSheetTitle: res.sheetTitle })
+                    updateCourse(c.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
                 }
                 count++
+            }
+            if (count === 0 && !courseLink) {
+                setShowLinkModal(true)
+                return
             }
             toast.success(`${count} curso(s) sincronizado(s) con Google Sheets`)
         } catch (error) {
@@ -103,7 +176,8 @@ export default function FPCoursesPage() {
     }
 
     const handleSyncGeneral = async () => {
-        if (!courseLink) {
+        const hasAnyLink = courses.some((c) => c.spreadsheetId) || courseLink
+        if (!hasAnyLink) {
             setShowLinkModal(true)
             return
         }
@@ -192,7 +266,10 @@ export default function FPCoursesPage() {
     }
 
     const handlePullFromSheets = (targetCourseId = null) => {
-        if (!courseLink) {
+        const targetCourse = targetCourseId ? courses.find((c) => c.id === targetCourseId) : null
+        const targetSpreadsheetId = targetCourse?.spreadsheetId || courseLink?.spreadsheetId
+        const targetSheetTitle = targetCourse?.googleSheetTitle || courseLink?.sheetTitle
+        if (!targetSpreadsheetId) {
             setShowLinkModal(true)
             return
         }
@@ -202,7 +279,7 @@ export default function FPCoursesPage() {
         if (!window.confirm(confirmMsg)) {
             return
         }
-        executePull(courseLink.spreadsheetId, courseLink.sheetTitle, targetCourseId)
+        executePull(targetSpreadsheetId, targetSheetTitle, targetCourseId)
     }
 
     const handleLinkAndPull = async () => {
@@ -391,7 +468,7 @@ export default function FPCoursesPage() {
                     >
                         Sincronizar con Sheets
                     </Button>
-                    <Button icon={Plus} onClick={() => setSelectedId(addCourse())}>
+                    <Button icon={Plus} onClick={() => setShowNewCourseModal(true)}>
                         Nuevo Curso
                     </Button>
                 </div>
@@ -537,6 +614,63 @@ export default function FPCoursesPage() {
                             onClick={handleLinkAndPull}
                         >
                             Vincular y Descargar
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Modal para Crear Nuevo Curso (Vincular Sheets o en Blanco) */}
+            <Modal
+                isOpen={showNewCourseModal}
+                onClose={() => {
+                    if (!creatingFromLink) {
+                        setShowNewCourseModal(false)
+                        setNewCourseLinkInput('')
+                    }
+                }}
+                title="Nuevo Curso"
+            >
+                <div className="space-y-4 p-2">
+                    <p className="text-sm text-text-secondary">
+                        Ingresá el link o ID de la hoja de Google Sheets de este nuevo curso. La aplicación mapeará automáticamente todos los datos del curso y la lista de alumnos:
+                    </p>
+                    <Input
+                        placeholder="https://docs.google.com/spreadsheets/d/... o ID"
+                        value={newCourseLinkInput}
+                        onChange={(e) => setNewCourseLinkInput(e.target.value)}
+                        disabled={creatingFromLink}
+                    />
+                    <div className="flex justify-end gap-2 pt-1">
+                        <Button
+                            icon={Link2}
+                            loading={creatingFromLink}
+                            disabled={creatingFromLink}
+                            onClick={handleCreateCourseFromLink}
+                        >
+                            Vincular y Cargar Curso
+                        </Button>
+                    </div>
+
+                    <div className="relative my-4">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-border-light"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-bg-surface px-2 text-text-muted font-medium">o bien</span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1">
+                        <p className="text-xs text-text-muted">
+                            Si no tenés un link todavía, podés crearlo en blanco y completarlo manualmente.
+                        </p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={creatingFromLink}
+                            onClick={handleCreateBlankCourse}
+                        >
+                            Crear Curso en Blanco
                         </Button>
                     </div>
                 </div>

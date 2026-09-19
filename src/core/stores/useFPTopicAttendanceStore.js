@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 const emptySheet = () => ({
     id: crypto.randomUUID(),
+    cursoId: '',
     region: '',
     distrito: '',
     cfpNumero: '',
@@ -31,8 +32,12 @@ const useFPTopicAttendanceStore = create(
         (set, get) => ({
             sheets: [],
 
-            addSheet: () => {
-                const sheet = emptySheet()
+            addSheet: (initialData = {}) => {
+                const sheet = {
+                    ...emptySheet(),
+                    ...initialData,
+                    id: crypto.randomUUID(),
+                }
                 set((state) => ({ sheets: [...state.sheets, sheet] }))
                 return sheet.id
             },

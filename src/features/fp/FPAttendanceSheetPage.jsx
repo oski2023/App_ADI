@@ -6,6 +6,7 @@ import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
+import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPAttendanceSheet, readFPAttendanceSheet, readAllFPAttendanceSheets, clearFPAttendanceSheet, deleteFPSpreadsheetTab, buildFPAttendanceTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
@@ -32,6 +33,7 @@ const MOVIMIENTO_FIELDS = [
 ]
 
 export default function FPAttendanceSheetPage() {
+    const courses = useFPCourseStore((s) => s.courses)
     const sheets = useFPAttendanceSheetStore((s) => s.sheets)
     const addSheet = useFPAttendanceSheetStore((s) => s.addSheet)
     const updateSheet = useFPAttendanceSheetStore((s) => s.updateSheet)
@@ -45,13 +47,107 @@ export default function FPAttendanceSheetPage() {
     const addBaja = useFPAttendanceSheetStore((s) => s.addBaja)
     const updateBaja = useFPAttendanceSheetStore((s) => s.updateBaja)
     const deleteBaja = useFPAttendanceSheetStore((s) => s.deleteBaja)
+    const calculateMovimiento = useFPAttendanceSheetStore((s) => s.calculateMovimiento)
+    const syncStudentsFromCourse = useFPAttendanceSheetStore((s) => s.syncStudentsFromCourse)
     const importOrUpdateSheet = useFPAttendanceSheetStore((s) => s.importOrUpdateSheet)
     const syncAllFromCloud = useFPAttendanceSheetStore((s) => s.syncAllFromCloud)
+
+    const [selectedCourseId, setSelectedCourseId] = useState('')
+    const activeCourse = courses.find((c) => c.id === selectedCourseId) || courses[0] || null
+
+    const filteredSheets = !activeCourse || selectedCourseId === 'ALL'
+        ? sheets
+        : sheets.filter((s) => (s.cursoId && s.cursoId === activeCourse.id) || (s.cursoNumero && s.cursoNumero === activeCourse.cursoNumero))
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
     const attendanceLink = useFPGoogleLinksStore((s) => s.links.attendanceSheet)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
+
+    const [showAddBajaModal, setShowAddBajaModal] = useState(false)
+    const [bajaStudentId, setBajaStudentId] = useState('')
+
+    const handleAddNewSheet = () => {
+        if (!activeCourse) {
+            toast.error('Primero debés cargar o crear un Curso en "Ficha de Curso"')
+            return
+        }
+        const emptyDaysMap = {}
+        for (let i = 1; i <= 31; i++) emptyDaysMap[i] = ''
+
+        const initialStudents = (activeCourse.students || []).map((st) => ({
+            id: crypto.randomUUID(),
+            sexo: (st.sexo || '').toUpperCase(),
+            apellidosNombres: st.apellidosNombres || '',
+            days: { ...emptyDaysMap },
+            totalAus: '',
+            totalPres: '',
+            temasTratados: '',
+        }))
+
+        const newId = addSheet({
+            cursoId: activeCourse.id,
+            centroNumero: activeCourse.cfpNumero || '',
+            distrito: activeCourse.distrito || '',
+            cursoNumero: activeCourse.cursoNumero || '',
+            especialidad: activeCourse.especialidad || '',
+            lugarDictado: activeCourse.lugarDictado || '',
+            enLaCalle: '',
+            localidad: '',
+            horarios: activeCourse.horarios ? { ...activeCourse.horarios } : undefined,
+            students: initialStudents,
+            informeMes: '',
+            informeAnio: new Date().getFullYear().toString(),
+            movimiento: {
+                totalInicioMes: initialStudents.length > 0 ? String(initialStudents.length) : '',
+                altas: '',
+                bajas: '0',
+                totalVarones: '',
+                totalMujeres: '',
+                totalAlumnos: '',
+            },
+        })
+        setSelectedId(newId)
+        toast.success(`Nueva planilla de asistencia para Curso Nº ${activeCourse.cursoNumero || '—'} (${initialStudents.length} alumnos heredados)`)
+    }
+
+    const handleOpenAddBajaModal = () => {
+        if (!selected) return
+        const availableStudents = selected.students || []
+        if (availableStudents.length > 0) {
+            setBajaStudentId(availableStudents[0].id)
+            setShowAddBajaModal(true)
+        } else {
+            addBaja(selected.id)
+            toast.info('Se agregó una fila de baja para cargar manualmente')
+        }
+    }
+
+    const handleConfirmAddBaja = () => {
+        if (!selected) return
+        const chosen = selected.students.find((st) => st.id === bajaStudentId)
+        if (chosen) {
+            addBaja(selected.id, {
+                sexo: (chosen.sexo || '').toUpperCase(),
+                apellidosNombres: chosen.apellidosNombres || '',
+            })
+            toast.success(`Baja registrada para ${chosen.apellidosNombres}`)
+        } else {
+            addBaja(selected.id)
+        }
+        setShowAddBajaModal(false)
+    }
+
+    const handleSyncStudentsFromCourse = () => {
+        const matchingCourse = courses.find((c) => c.id === selected.cursoId || c.cursoNumero === selected.cursoNumero)
+        if (!matchingCourse) {
+            toast.error('No se encontró la Ficha de Curso correspondiente a este informe')
+            return
+        }
+        syncStudentsFromCourse(selected.id, matchingCourse.students)
+        calculateMovimiento(selected.id)
+        toast.success(`Lista de alumnos sincronizada desde Ficha de Curso (${matchingCourse.students.length} alumnos)`)
+    }
 
     const [syncing, setSyncing] = useState(false)
     const [pulling, setPulling] = useState(false)
@@ -313,11 +409,21 @@ export default function FPAttendanceSheetPage() {
 
                 {/* Grilla de asistencia */}
                 <Card>
-                    <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
+                    <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
                         <h2 className="text-base font-semibold text-text-primary">Grilla de Asistencia (P = Presente, A = Ausente)</h2>
-                        <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
-                            Agregar Alumno
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleSyncStudentsFromCourse}
+                                title="Actualiza la lista de alumnos desde la Ficha de Curso correspondiente"
+                            >
+                                Actualizar de Ficha de Curso
+                            </Button>
+                            <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
+                                Agregar Alumno
+                            </Button>
+                        </div>
                     </div>
                     <CardBody className="overflow-x-auto">
                         <table className="text-sm border-collapse">
@@ -407,8 +513,11 @@ export default function FPAttendanceSheetPage() {
                 {/* Bajas de alumnos */}
                 <Card>
                     <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
-                        <h2 className="text-base font-semibold text-text-primary">Bajas de Alumnos/as</h2>
-                        <Button icon={Plus} size="sm" onClick={() => addBaja(selected.id)}>
+                        <div>
+                            <h2 className="text-base font-semibold text-text-primary">Bajas de Alumnos/as</h2>
+                            <p className="text-xs text-text-muted mt-0.5">Al hacer click podés seleccionar un alumno cargado en el curso</p>
+                        </div>
+                        <Button icon={Plus} size="sm" onClick={handleOpenAddBajaModal}>
                             Agregar Baja
                         </Button>
                     </div>
@@ -445,8 +554,24 @@ export default function FPAttendanceSheetPage() {
 
                 {/* Movimiento de Alumnos */}
                 <Card>
-                    <div className="px-5 py-4 border-b border-border-light">
-                        <h2 className="text-base font-semibold text-text-primary">Movimiento de Alumnos</h2>
+                    <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <h2 className="text-base font-semibold text-text-primary">Movimiento de Alumnos</h2>
+                            <p className="text-xs text-text-muted mt-0.5">
+                                Calculado automáticamente según asistencia y bajas (Altas se ingresa manualmente por teclado)
+                            </p>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            icon={RefreshCw}
+                            onClick={() => {
+                                calculateMovimiento(selected.id)
+                                toast.success('Movimiento de alumnos recalculado')
+                            }}
+                        >
+                            Recalcular
+                        </Button>
                     </div>
                     <CardBody className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {MOVIMIENTO_FIELDS.map((f) => (
@@ -500,22 +625,56 @@ export default function FPAttendanceSheetPage() {
                     >
                         Sincronizar con Sheets
                     </Button>
-                    <Button icon={Plus} onClick={() => setSelectedId(addSheet())}>
+                    <Button icon={Plus} onClick={handleAddNewSheet}>
                         Nuevo Informe Mensual
                     </Button>
                 </div>
             </div>
 
-            {sheets.length === 0 && (
+            {/* Selector de Curso */}
+            <div className="bg-bg-surface border border-border-light rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-text-primary whitespace-nowrap">📚 Número de Curso:</span>
+                    {courses.length > 0 ? (
+                        <select
+                            className="bg-bg-main border border-border-light rounded-lg px-3 py-1.5 text-sm font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            value={activeCourse ? activeCourse.id : ''}
+                            onChange={(e) => setSelectedCourseId(e.target.value)}
+                        >
+                            {courses.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    Curso Nº {c.cursoNumero || '—'} · {c.especialidad || 'Sin especialidad'}
+                                </option>
+                            ))}
+                            {courses.length > 1 && <option value="ALL">Mostrar todos los cursos</option>}
+                        </select>
+                    ) : (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                            No hay cursos cargados. Creá primero un curso en la pestaña "Ficha de Curso".
+                        </span>
+                    )}
+                </div>
+                {activeCourse && (
+                    <div className="text-xs text-text-secondary flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span><strong>C.F.P. Nº:</strong> {activeCourse.cfpNumero || '—'}</span>
+                        <span><strong>Distrito:</strong> {activeCourse.distrito || '—'}</span>
+                        <span><strong>Alumnos:</strong> {activeCourse.students?.length || 0}</span>
+                    </div>
+                )}
+            </div>
+
+            {filteredSheets.length === 0 && (
                 <Card>
                     <CardBody className="text-center py-10 text-text-muted">
-                        Todavía no cargaste ningún informe mensual en este dispositivo. Hacé clic en "Traer de Google Sheets" para descargar lo que tenés en la nube, o en "Nuevo Informe Mensual" para empezar de cero.
+                        {courses.length === 0
+                            ? 'Para comenzar a registrar la asistencia mensual, primero debés cargar un curso en la pestaña "Ficha de Curso".'
+                            : `Todavía no hay informes mensuales para el curso seleccionado (Curso Nº ${activeCourse?.cursoNumero || '—'}). Hacé clic en "Nuevo Informe Mensual" para crear el primero.`}
                     </CardBody>
                 </Card>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sheets.map((s) => (
+                {filteredSheets.map((s) => (
                     <Card key={s.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedId(s.id)}>
                         <CardBody>
                             <div className="flex items-start justify-between">
@@ -647,6 +806,64 @@ export default function FPAttendanceSheetPage() {
                         >
                             Vincular y Descargar
                         </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Modal para Agregar Baja seleccionando de la lista de alumnos */}
+            <Modal
+                isOpen={showAddBajaModal}
+                onClose={() => setShowAddBajaModal(false)}
+                title="Agregar Baja de Alumno/a"
+            >
+                <div className="space-y-4 p-2">
+                    <p className="text-sm text-text-secondary">
+                        Seleccioná el alumno/a cargado en este curso para registrar su baja. Se autocompletará su Apellidos y Nombres y Sexo:
+                    </p>
+                    {selected && selected.students.length > 0 ? (
+                        <div>
+                            <label className="block text-xs font-semibold text-text-primary mb-1.5">
+                                Alumno/a del curso:
+                            </label>
+                            <select
+                                className="w-full bg-bg-main border border-border-light rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                value={bajaStudentId}
+                                onChange={(e) => setBajaStudentId(e.target.value)}
+                            >
+                                {selected.students.map((st) => (
+                                    <option key={st.id} value={st.id}>
+                                        {st.apellidosNombres || 'Sin nombre'} (Sexo: {st.sexo || '—'})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    ) : (
+                        <p className="text-xs text-amber-500">
+                            No hay alumnos cargados en este informe para seleccionar.
+                        </p>
+                    )}
+                    <div className="flex items-center justify-between pt-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                                addBaja(selected.id)
+                                setShowAddBajaModal(false)
+                            }}
+                        >
+                            Cargar en Blanco
+                        </Button>
+                        <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => setShowAddBajaModal(false)}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                onClick={handleConfirmAddBaja}
+                                disabled={!selected || selected.students.length === 0}
+                            >
+                                Confirmar Baja
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </Modal>

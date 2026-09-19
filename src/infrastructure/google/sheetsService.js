@@ -284,6 +284,13 @@ export function buildFPCourseTabTitle(course) {
     return sanitizeSheetTabTitle(parts.join(' - '), 'Ficha de Curso')
 }
 
+export function buildFPExamActTabTitle(act) {
+    const parts = []
+    if (act.cursoNumero) parts.push(`Curso ${act.cursoNumero}`)
+    if (act.especialidad) parts.push(act.especialidad)
+    return sanitizeSheetTabTitle(parts.join(' - '), 'Acta de Examen')
+}
+
 // Asegura que una pestaña con el nombre dado exista en la hoja. Si no existe, la crea duplicando la primera
 // pestaña (para preservar la estructura visual y de celdas) o renombrando la única pestaña genérica.
 export async function ensureFPSpreadsheetTab(spreadsheetId, desiredTitle, preferredGid = null) {
@@ -1093,9 +1100,13 @@ const FP_EXAM_ACT_RESUMEN_CELLS = {
 export async function syncFPExamActSheet(spreadsheetId, sheetTitle, act) {
     if (!isGoogleConfigured() || !spreadsheetId) return false
 
+    const desiredTitle = buildFPExamActTabTitle(act)
+    const tabInfo = await ensureFPSpreadsheetTab(spreadsheetId, act.googleSheetTitle || desiredTitle)
+    const effectiveSheetTitle = tabInfo ? tabInfo.sheetTitle : (sheetTitle || desiredTitle)
+
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_EXAM_ACT_CELL_MAP).forEach(([field, cell]) => pushCell(cell, act[field]))
         Object.entries(FP_EXAM_ACT_RESUMEN_CELLS).forEach(([campo, cell]) => pushCell(cell, act.resumen[campo]))
@@ -1110,9 +1121,93 @@ export async function syncFPExamActSheet(spreadsheetId, sheetTitle, act) {
             resource: { valueInputOption: 'RAW', data },
         })
 
-        return true
+        return { success: true, sheetTitle: effectiveSheetTitle }
     } catch (error) {
         console.error('[SheetsService] Error al sincronizar Acta de Examen:', error)
+        throw error
+    }
+}
+
+// Parsea los datos de un Acta de Examen desde una matriz de filas
+export function parseFPExamActGrid(rows, sheetTitle = '') {
+    const headerData = {}
+    Object.entries(FP_EXAM_ACT_CELL_MAP).forEach(([field, cell]) => {
+        headerData[field] = getCellFromGrid(rows, cell)
+    })
+    const resumen = {}
+    Object.entries(FP_EXAM_ACT_RESUMEN_CELLS).forEach(([campo, cell]) => {
+        resumen[campo] = getCellFromGrid(rows, cell)
+    })
+    const students = []
+    for (let r = FP_EXAM_ACT_STUDENT_START_ROW; r <= 35; r++) {
+        const apellidosNombres = getCellFromGrid(rows, `C${r}`)
+        const docNum = getCellFromGrid(rows, `T${r}`)
+        if (!apellidosNombres && !docNum) continue
+        const st = { id: crypto.randomUUID() }
+        Object.entries(FP_EXAM_ACT_STUDENT_COLUMNS).forEach(([field, col]) => {
+            st[field] = getCellFromGrid(rows, `${col}${r}`)
+        })
+        students.push(st)
+    }
+    return {
+        ...headerData,
+        resumen,
+        students,
+        googleSheetTitle: sheetTitle,
+    }
+}
+
+// Leer Acta de Examen de una pestaña específica
+export async function readFPExamActSheet(spreadsheetId, sheetTitle) {
+    if (!isGoogleConfigured() || !spreadsheetId) return null
+    try {
+        const response = await gapi.client.sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetTitle}!A1:U50`,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const rows = response.result.values || []
+        return parseFPExamActGrid(rows, sheetTitle)
+    } catch (error) {
+        console.error('[SheetsService] Error al leer Acta de Examen:', error)
+        throw error
+    }
+}
+
+// Leer TODAS las Actas de Examen en el documento vinculado
+export async function readAllFPExamActSheets(spreadsheetId) {
+    if (!isGoogleConfigured() || !spreadsheetId) return []
+    try {
+        const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId })
+        const tabs = info.result.sheets || []
+        if (tabs.length === 0) return []
+
+        const ranges = tabs.map((t) => `${t.properties.title}!A1:U50`)
+        const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
+            spreadsheetId,
+            ranges,
+            valueRenderOption: 'FORMATTED_VALUE',
+        })
+        const valueRanges = batchResponse.result.valueRanges || []
+
+        const results = []
+        valueRanges.forEach((vr, idx) => {
+            const tabTitle = tabs[idx]?.properties?.title || ''
+            const rows = vr.values || []
+            const parsed = parseFPExamActGrid(rows, tabTitle)
+            const hasData =
+                Boolean(parsed.cursoNumero?.trim()) ||
+                Boolean(parsed.especialidad?.trim()) ||
+                Boolean(parsed.cfpNumero?.trim()) ||
+                parsed.students.length > 0
+
+            if (hasData || tabs.length === 1) {
+                results.push(parsed)
+            }
+        })
+        return results
+    } catch (error) {
+        console.error('[SheetsService] Error al leer todas las Actas de Examen:', error)
         throw error
     }
 }

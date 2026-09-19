@@ -6,6 +6,7 @@ import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
 import { Plus, Trash2, ArrowLeft, NotebookPen, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
 import useFPTopicAttendanceStore from '../../core/stores/useFPTopicAttendanceStore'
+import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPTopicAttendanceSheet, readFPTopicAttendanceSheet, readAllFPTopicAttendanceSheets, clearFPTopicAttendanceSheet, deleteFPSpreadsheetTab, buildFPTopicTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
@@ -21,6 +22,7 @@ const DIAS = [
 ]
 
 export default function FPTopicAttendancePage() {
+    const courses = useFPCourseStore((s) => s.courses)
     const sheets = useFPTopicAttendanceStore((s) => s.sheets)
     const addSheet = useFPTopicAttendanceStore((s) => s.addSheet)
     const updateSheet = useFPTopicAttendanceStore((s) => s.updateSheet)
@@ -32,10 +34,37 @@ export default function FPTopicAttendancePage() {
     const importOrUpdateSheet = useFPTopicAttendanceStore((s) => s.importOrUpdateSheet)
     const syncAllFromCloud = useFPTopicAttendanceStore((s) => s.syncAllFromCloud)
 
+    const [selectedCourseId, setSelectedCourseId] = useState('')
+    const activeCourse = courses.find((c) => c.id === selectedCourseId) || courses[0] || null
+
+    const filteredSheets = !activeCourse || selectedCourseId === 'ALL'
+        ? sheets
+        : sheets.filter((s) => (s.cursoId && s.cursoId === activeCourse.id) || (s.cursoNumero && s.cursoNumero === activeCourse.cursoNumero))
+
     const [selectedId, setSelectedId] = useState(null)
     const selected = sheets.find((s) => s.id === selectedId)
     const topicLink = useFPGoogleLinksStore((s) => s.links.topicAttendance)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
+
+    const handleAddNewSheet = () => {
+        if (!activeCourse) {
+            toast.error('Primero debés cargar o crear un Curso en "Ficha de Curso"')
+            return
+        }
+        const newId = addSheet({
+            cursoId: activeCourse.id,
+            cursoNumero: activeCourse.cursoNumero || '',
+            especialidad: activeCourse.especialidad || '',
+            cfpNumero: activeCourse.cfpNumero || '',
+            distrito: activeCourse.distrito || '',
+            sedeDictado: activeCourse.lugarDictado || '',
+            instructor: activeCourse.instructor || '',
+            horarios: activeCourse.horarios ? { ...activeCourse.horarios } : undefined,
+            mesDe: '',
+        })
+        setSelectedId(newId)
+        toast.success(`Nueva planilla mensual para Curso Nº ${activeCourse.cursoNumero || '—'}`)
+    }
 
     const [syncing, setSyncing] = useState(false)
     const [pulling, setPulling] = useState(false)
@@ -258,6 +287,43 @@ export default function FPTopicAttendancePage() {
                         <h2 className="text-base font-semibold text-text-primary">Datos Generales</h2>
                     </div>
                     <CardBody className="space-y-4">
+                        {courses.length > 0 && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-bg-main/50 border border-border-light rounded-xl">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-text-primary whitespace-nowrap">📚 Curso Vinculado:</span>
+                                    <select
+                                        className="bg-bg-surface border border-border-light rounded-lg px-2.5 py-1 text-xs font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        value={selected.cursoId || courses.find((c) => c.cursoNumero === selected.cursoNumero)?.id || ''}
+                                        onChange={(e) => {
+                                            const found = courses.find((c) => c.id === e.target.value)
+                                            if (found) {
+                                                updateSheet(selected.id, {
+                                                    cursoId: found.id,
+                                                    cursoNumero: found.cursoNumero || selected.cursoNumero,
+                                                    especialidad: found.especialidad || selected.especialidad,
+                                                    cfpNumero: found.cfpNumero || selected.cfpNumero,
+                                                    distrito: found.distrito || selected.distrito,
+                                                    sedeDictado: found.lugarDictado || selected.sedeDictado,
+                                                    instructor: found.instructor || selected.instructor,
+                                                    horarios: found.horarios ? { ...found.horarios } : selected.horarios,
+                                                })
+                                                toast.success(`Datos sincronizados con Curso Nº ${found.cursoNumero || '—'}`)
+                                            }
+                                        }}
+                                    >
+                                        <option value="">Seleccionar curso...</option>
+                                        {courses.map((c) => (
+                                            <option key={c.id} value={c.id}>
+                                                Curso Nº {c.cursoNumero || '—'} · {c.especialidad || 'Sin especialidad'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <span className="text-xs text-text-muted">
+                                    Hereda datos de la Ficha de Curso seleccionada
+                                </span>
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <Input label="Región" value={selected.region} onChange={(e) => updateSheet(selected.id, { region: e.target.value })} />
                             <Input label="Distrito" value={selected.distrito} onChange={(e) => updateSheet(selected.id, { distrito: e.target.value })} />
@@ -369,22 +435,56 @@ export default function FPTopicAttendancePage() {
                     >
                         Sincronizar con Sheets
                     </Button>
-                    <Button icon={Plus} onClick={() => setSelectedId(addSheet())}>
+                    <Button icon={Plus} onClick={handleAddNewSheet}>
                         Nueva Planilla
                     </Button>
                 </div>
             </div>
 
-            {sheets.length === 0 && (
+            {/* Selector de Curso */}
+            <div className="bg-bg-surface border border-border-light rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-text-primary whitespace-nowrap">📚 Número de Curso:</span>
+                    {courses.length > 0 ? (
+                        <select
+                            className="bg-bg-main border border-border-light rounded-lg px-3 py-1.5 text-sm font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                            value={activeCourse ? activeCourse.id : ''}
+                            onChange={(e) => setSelectedCourseId(e.target.value)}
+                        >
+                            {courses.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                    Curso Nº {c.cursoNumero || '—'} · {c.especialidad || 'Sin especialidad'}
+                                </option>
+                            ))}
+                            {courses.length > 1 && <option value="ALL">Mostrar todos los cursos</option>}
+                        </select>
+                    ) : (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                            No hay cursos cargados. Creá primero un curso en la pestaña "Ficha de Curso".
+                        </span>
+                    )}
+                </div>
+                {activeCourse && (
+                    <div className="text-xs text-text-secondary flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span><strong>C.F.P. Nº:</strong> {activeCourse.cfpNumero || '—'}</span>
+                        <span><strong>Distrito:</strong> {activeCourse.distrito || '—'}</span>
+                        <span><strong>Instructor:</strong> {activeCourse.instructor || '—'}</span>
+                    </div>
+                )}
+            </div>
+
+            {filteredSheets.length === 0 && (
                 <Card>
                     <CardBody className="text-center py-10 text-text-muted">
-                        Todavía no cargaste ninguna planilla en este dispositivo. Hacé clic en "Traer de Google Sheets" para descargar lo que tenés en la nube, o en "Nueva Planilla" para empezar de cero.
+                        {courses.length === 0
+                            ? 'Para comenzar a registrar temas y asistencia, primero debés cargar un curso en la pestaña "Ficha de Curso".'
+                            : `Todavía no hay planillas para el curso seleccionado (Curso Nº ${activeCourse?.cursoNumero || '—'}). Hacé clic en "Nueva Planilla" para crear la primera del mes.`}
                     </CardBody>
                 </Card>
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sheets.map((s) => (
+                {filteredSheets.map((s) => (
                     <Card key={s.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedId(s.id)}>
                         <CardBody>
                             <div className="flex items-start justify-between">

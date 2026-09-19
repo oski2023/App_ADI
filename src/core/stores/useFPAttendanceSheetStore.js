@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+const DIAS_MES = Array.from({ length: 31 }, (_, i) => i + 1)
+
 const emptyDays = () => {
     const days = {}
     for (let i = 1; i <= 31; i++) days[i] = ''
@@ -9,6 +11,7 @@ const emptyDays = () => {
 
 const emptySheet = () => ({
     id: crypto.randomUUID(),
+    cursoId: '',
     centroNumero: '',
     distrito: '',
     tipo: '',
@@ -59,8 +62,12 @@ const useFPAttendanceSheetStore = create(
         (set, get) => ({
             sheets: [],
 
-            addSheet: () => {
-                const sheet = emptySheet()
+            addSheet: (initialData = {}) => {
+                const sheet = {
+                    ...emptySheet(),
+                    ...initialData,
+                    id: crypto.randomUUID(),
+                }
                 set((state) => ({ sheets: [...state.sheets, sheet] }))
                 return sheet.id
             },
@@ -68,6 +75,37 @@ const useFPAttendanceSheetStore = create(
             updateSheet: (id, data) => set((state) => ({
                 sheets: state.sheets.map((s) => (s.id === id ? { ...s, ...data } : s)),
             })),
+
+            syncStudentsFromCourse: (sheetId, courseStudents) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) => {
+                        if (s.id !== sheetId) return s
+                        const existingStudents = [...s.students]
+                        const updatedStudents = (courseStudents || []).map((cSt) => {
+                            const found = existingStudents.find(
+                                (es) => es.apellidosNombres && es.apellidosNombres.trim().toLowerCase() === (cSt.apellidosNombres || '').trim().toLowerCase()
+                            )
+                            if (found) {
+                                return {
+                                    ...found,
+                                    sexo: cSt.sexo || found.sexo,
+                                    apellidosNombres: cSt.apellidosNombres,
+                                }
+                            }
+                            return {
+                                id: crypto.randomUUID(),
+                                sexo: cSt.sexo || '',
+                                apellidosNombres: cSt.apellidosNombres || '',
+                                days: emptyDays(),
+                                totalAus: '',
+                                totalPres: '',
+                                temasTratados: '',
+                            }
+                        })
+                        return { ...s, students: updatedStudents }
+                    }),
+                }))
+            },
 
             // Sincronización bidireccional (PC ↔ Celular):
             // Importa un informe mensual leído desde Google Sheets. Si ya existe en este dispositivo,
@@ -178,44 +216,134 @@ const useFPAttendanceSheetStore = create(
                 ),
             })),
 
-            updateStudentDay: (sheetId, studentId, day, valor) => set((state) => ({
-                sheets: state.sheets.map((s) =>
-                    s.id === sheetId
-                        ? {
-                            ...s,
-                            students: s.students.map((st) =>
-                                st.id === studentId ? { ...st, days: { ...st.days, [day]: valor } } : st
-                            ),
+            updateStudentDay: (sheetId, studentId, day, valor) => {
+                const upper = (valor || '').toUpperCase()
+                set((state) => ({
+                    sheets: state.sheets.map((s) => {
+                        if (s.id !== sheetId) return s
+                        const updatedStudents = s.students.map((st) => {
+                            if (st.id !== studentId) return st
+                            const newDays = { ...st.days, [day]: upper }
+                            const presCount = DIAS_MES.filter((d) => (newDays[d] || '').trim().toUpperCase() === 'P').length
+                            const ausCount = DIAS_MES.filter((d) => (newDays[d] || '').trim().toUpperCase() === 'A').length
+                            return {
+                                ...st,
+                                days: newDays,
+                                totalPres: String(presCount),
+                                totalAus: String(ausCount),
+                            }
+                        })
+                        return { ...s, students: updatedStudents }
+                    }),
+                }))
+                get().calculateMovimiento(sheetId)
+            },
+
+            deleteStudent: (sheetId, studentId) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) =>
+                        s.id === sheetId ? { ...s, students: s.students.filter((st) => st.id !== studentId) } : s
+                    ),
+                }))
+                get().calculateMovimiento(sheetId)
+            },
+
+            addBaja: (sheetId, initialData = {}) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) =>
+                        s.id === sheetId ? { ...s, bajas: [...s.bajas, { ...emptyBaja(), ...initialData }] } : s
+                    ),
+                }))
+                get().calculateMovimiento(sheetId)
+            },
+
+            updateBaja: (sheetId, bajaId, data) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) =>
+                        s.id === sheetId
+                            ? { ...s, bajas: s.bajas.map((b) => (b.id === bajaId ? { ...b, ...data } : b)) }
+                            : s
+                    ),
+                }))
+                get().calculateMovimiento(sheetId)
+            },
+
+            deleteBaja: (sheetId, bajaId) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) =>
+                        s.id === sheetId ? { ...s, bajas: s.bajas.filter((b) => b.id !== bajaId) } : s
+                    ),
+                }))
+                get().calculateMovimiento(sheetId)
+            },
+
+            calculateMovimiento: (sheetId) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) => {
+                        if (s.id !== sheetId) return s
+                        const students = s.students || []
+                        const activeDays = DIAS_MES.filter((d) =>
+                            students.some((st) => {
+                                const v = (st.days?.[d] || '').trim().toUpperCase()
+                                return v === 'P' || v === 'A'
+                            })
+                        )
+
+                        let totalInicioMes = s.movimiento?.totalInicioMes || ''
+                        let totalVarones = ''
+                        let totalMujeres = ''
+                        let totalAlumnos = ''
+
+                        if (activeDays.length > 0) {
+                            const firstDay = activeDays[0]
+                            const lastDay = activeDays[activeDays.length - 1]
+
+                            // Total al iniciar el mes: alumnos con P o A en columna inicial
+                            const inicioCount = students.filter((st) => {
+                                const v = (st.days?.[firstDay] || '').trim().toUpperCase()
+                                return v === 'P' || v === 'A'
+                            }).length
+                            totalInicioMes = String(inicioCount)
+
+                            // Alumnos activos en la última columna completada con P o A
+                            const endStudents = students.filter((st) => {
+                                const v = (st.days?.[lastDay] || '').trim().toUpperCase()
+                                return v === 'P' || v === 'A'
+                            })
+
+                            const varonesCount = endStudents.filter((st) => {
+                                const sx = (st.sexo || '').trim().toUpperCase()
+                                return sx === 'M' || sx === 'V'
+                            }).length
+
+                            const mujeresCount = endStudents.filter((st) => {
+                                const sx = (st.sexo || '').trim().toUpperCase()
+                                return sx === 'F'
+                            }).length
+
+                            totalVarones = String(varonesCount)
+                            totalMujeres = String(mujeresCount)
+                            totalAlumnos = String(endStudents.length)
+                        } else if (students.length > 0) {
+                            totalInicioMes = String(students.length)
                         }
-                        : s
-                ),
-            })),
 
-            deleteStudent: (sheetId, studentId) => set((state) => ({
-                sheets: state.sheets.map((s) =>
-                    s.id === sheetId ? { ...s, students: s.students.filter((st) => st.id !== studentId) } : s
-                ),
-            })),
+                        const bajasCount = String((s.bajas || []).length)
 
-            addBaja: (sheetId) => set((state) => ({
-                sheets: state.sheets.map((s) =>
-                    s.id === sheetId ? { ...s, bajas: [...s.bajas, emptyBaja()] } : s
-                ),
-            })),
-
-            updateBaja: (sheetId, bajaId, data) => set((state) => ({
-                sheets: state.sheets.map((s) =>
-                    s.id === sheetId
-                        ? { ...s, bajas: s.bajas.map((b) => (b.id === bajaId ? { ...b, ...data } : b)) }
-                        : s
-                ),
-            })),
-
-            deleteBaja: (sheetId, bajaId) => set((state) => ({
-                sheets: state.sheets.map((s) =>
-                    s.id === sheetId ? { ...s, bajas: s.bajas.filter((b) => b.id !== bajaId) } : s
-                ),
-            })),
+                        return {
+                            ...s,
+                            movimiento: {
+                                ...s.movimiento,
+                                totalInicioMes: totalInicioMes || s.movimiento?.totalInicioMes || '',
+                                bajas: bajasCount,
+                                totalVarones,
+                                totalMujeres,
+                                totalAlumnos,
+                            },
+                        }
+                    }),
+                }))
+            },
         }),
         {
             name: 'adi_fp_attendance_sheet',
