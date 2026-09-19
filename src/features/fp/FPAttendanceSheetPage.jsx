@@ -4,11 +4,12 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2, Cloud } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import { syncFPAttendanceSheet, readFPAttendanceSheet, readAllFPAttendanceSheets, clearFPAttendanceSheet, deleteFPSpreadsheetTab, buildFPAttendanceTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
+import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -205,6 +206,7 @@ export default function FPAttendanceSheetPage() {
                 updateSheet(sheetToSync.id, { googleSheetTitle: res.sheetTitle })
             }
             toast.success(`"${sheetToSync.especialidad || 'Planilla'}" sincronizada con Google Sheets`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPAttendanceSheetPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
                 notifyAuthExpired(() => handleSyncSingle(sheetToSync))
@@ -217,7 +219,14 @@ export default function FPAttendanceSheetPage() {
     }
 
     const handleSyncAll = async () => {
-        if (!attendanceLink) {
+        let activeLink = attendanceLink
+        if (!activeLink) {
+            const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+            if (cloudRes.success) {
+                activeLink = useFPGoogleLinksStore.getState().links.attendanceSheet
+            }
+        }
+        if (!activeLink) {
             setShowLinkModal(true)
             return
         }
@@ -229,13 +238,14 @@ export default function FPAttendanceSheetPage() {
         let count = 0
         try {
             for (const s of sheets) {
-                const res = await syncFPAttendanceSheet(attendanceLink.spreadsheetId, attendanceLink.sheetTitle, s)
+                const res = await syncFPAttendanceSheet(activeLink.spreadsheetId, activeLink.sheetTitle, s)
                 if (res?.sheetTitle && res.sheetTitle !== s.googleSheetTitle) {
                     updateSheet(s.id, { googleSheetTitle: res.sheetTitle })
                 }
                 count++
             }
             toast.success(`${count} planilla(s) sincronizada(s) con Google Sheets`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPAttendanceSheetPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
                 notifyAuthExpired(handleSyncAll)
@@ -248,7 +258,14 @@ export default function FPAttendanceSheetPage() {
     }
 
     const handleSyncGeneral = async () => {
-        if (!attendanceLink) {
+        let activeLink = attendanceLink
+        if (!activeLink) {
+            const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+            if (cloudRes.success) {
+                activeLink = useFPGoogleLinksStore.getState().links.attendanceSheet
+            }
+        }
+        if (!activeLink) {
             setShowLinkModal(true)
             return
         }
@@ -288,6 +305,7 @@ export default function FPAttendanceSheetPage() {
                     await deleteFPSpreadsheetTab(attendanceLink.spreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminada`)
                 }
+                saveFPCloudRegistry().catch((err) => console.warn('[FPAttendanceSheetPage] Error guardando registro en Drive:', err))
             } catch (error) {
                 if (isAuthError(error)) {
                     notifyAuthExpired(handleConfirmDelete)
@@ -299,6 +317,7 @@ export default function FPAttendanceSheetPage() {
             }
         } else {
             toast.success(`"${targetName}" eliminada`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPAttendanceSheetPage] Error guardando registro en Drive:', err))
         }
     }
 
@@ -336,8 +355,30 @@ export default function FPAttendanceSheetPage() {
         }
     }
 
-    const handlePullFromSheets = (targetSheetId = null) => {
-        if (!attendanceLink) {
+    const handlePullFromSheets = async (targetSheetId = null) => {
+        let activeLink = attendanceLink
+
+        if (!activeLink) {
+            setPulling(true)
+            const toastId = toast.loading('Buscando vínculos en Google Drive...')
+            try {
+                const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+                toast.dismiss(toastId)
+                if (cloudRes.success) {
+                    activeLink = useFPGoogleLinksStore.getState().links.attendanceSheet
+                    if (activeLink) {
+                        toast.success('¡Vínculo detectado automáticamente desde Google Drive!')
+                    }
+                }
+            } catch (err) {
+                toast.dismiss(toastId)
+                console.warn('[FPAttendanceSheetPage] Error buscando en Drive:', err)
+            } finally {
+                setPulling(false)
+            }
+        }
+
+        if (!activeLink) {
             setShowLinkModal(true)
             return
         }
@@ -347,7 +388,7 @@ export default function FPAttendanceSheetPage() {
         if (!window.confirm(confirmMsg)) {
             return
         }
-        executePull(attendanceLink.spreadsheetId, attendanceLink.sheetTitle, targetSheetId)
+        executePull(activeLink.spreadsheetId, activeLink.sheetTitle, targetSheetId)
     }
 
     const handleLinkAndPull = async () => {
@@ -362,6 +403,7 @@ export default function FPAttendanceSheetPage() {
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')
+            saveFPCloudRegistry().catch((err) => console.warn('[FPAttendanceSheetPage] Error guardando registro en Drive:', err))
             await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
         } catch (error) {
             console.error('[FPAttendanceSheetPage] Error al vincular y descargar:', error)
@@ -837,18 +879,50 @@ export default function FPAttendanceSheetPage() {
                         value={linkInput}
                         onChange={(e) => setLinkInput(e.target.value)}
                     />
-                    <div className="flex justify-end gap-2 pt-2">
-                        <Button variant="ghost" onClick={() => setShowLinkModal(false)}>
-                            Cancelar
-                        </Button>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                         <Button
-                            icon={Link2}
-                            loading={linking}
+                            variant="outline"
+                            icon={Cloud}
                             disabled={linking}
-                            onClick={handleLinkAndPull}
+                            onClick={async () => {
+                                setLinking(true)
+                                const toastId = toast.loading('Buscando en Google Drive...')
+                                try {
+                                    const res = await autoDiscoverAndSyncCloudRegistry()
+                                    toast.dismiss(toastId)
+                                    if (res.success) {
+                                        toast.success('¡Vínculos detectados desde Drive!')
+                                        setShowLinkModal(false)
+                                        const freshLink = useFPGoogleLinksStore.getState().links.attendanceSheet
+                                        if (freshLink?.spreadsheetId) {
+                                            executePull(freshLink.spreadsheetId, freshLink.sheetTitle)
+                                        }
+                                    } else {
+                                        toast.error('No se encontraron vínculos guardados en Google Drive')
+                                    }
+                                } catch (e) {
+                                    toast.dismiss(toastId)
+                                    toast.error('Error buscando en Drive')
+                                } finally {
+                                    setLinking(false)
+                                }
+                            }}
                         >
-                            Vincular y Descargar
+                            Buscar en Google Drive
                         </Button>
+                        <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => setShowLinkModal(false)}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                icon={Link2}
+                                loading={linking}
+                                disabled={linking}
+                                onClick={handleLinkAndPull}
+                            >
+                                Vincular y Descargar
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </Modal>

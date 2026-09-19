@@ -4,7 +4,7 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, FileText, Calculator, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, FileText, Calculator, RefreshCw, CloudDownload, Link2, Cloud } from 'lucide-react'
 import useFPExamActStore from '../../core/stores/useFPExamActStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
@@ -18,6 +18,7 @@ import {
     buildFPExamActTabTitle,
     linkFPDocument,
 } from '../../infrastructure/google/sheetsService'
+import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -175,6 +176,7 @@ export default function FPExamActPage() {
                 updateAct(actToSync.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
             }
             toast.success(`"${actToSync.especialidad || 'Acta'}" sincronizada con Google Sheets`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
                 notifyAuthExpired(() => handleSyncSingle(actToSync))
@@ -187,6 +189,13 @@ export default function FPExamActPage() {
     }
 
     const handleSyncAll = async () => {
+        let activeLink = examActLink
+        if (!activeLink && !acts.some((a) => a.spreadsheetId)) {
+            const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+            if (cloudRes.success) {
+                activeLink = useFPGoogleLinksStore.getState().links.examAct
+            }
+        }
         if (acts.length === 0) {
             toast.error('No tenés actas cargadas para sincronizar')
             return
@@ -195,8 +204,8 @@ export default function FPExamActPage() {
         let count = 0
         try {
             for (const a of acts) {
-                const targetSpreadsheetId = a.spreadsheetId || examActLink?.spreadsheetId
-                const targetSheetTitle = a.googleSheetTitle || examActLink?.sheetTitle
+                const targetSpreadsheetId = a.spreadsheetId || activeLink?.spreadsheetId
+                const targetSheetTitle = a.googleSheetTitle || activeLink?.sheetTitle
                 if (!targetSpreadsheetId) continue
                 const res = await syncFPExamActSheet(targetSpreadsheetId, targetSheetTitle, a)
                 if (res?.sheetTitle && res.sheetTitle !== a.googleSheetTitle) {
@@ -204,11 +213,12 @@ export default function FPExamActPage() {
                 }
                 count++
             }
-            if (count === 0 && !examActLink) {
+            if (count === 0 && !activeLink) {
                 setShowLinkModal(true)
                 return
             }
             toast.success(`${count} acta(s) sincronizada(s) con Google Sheets`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
                 notifyAuthExpired(handleSyncAll)
@@ -221,7 +231,13 @@ export default function FPExamActPage() {
     }
 
     const handleSyncGeneral = async () => {
-        const hasAnyLink = acts.some((a) => a.spreadsheetId) || examActLink
+        let hasAnyLink = acts.some((a) => a.spreadsheetId) || examActLink
+        if (!hasAnyLink) {
+            const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+            if (cloudRes.success) {
+                hasAnyLink = true
+            }
+        }
         if (!hasAnyLink) {
             setShowLinkModal(true)
             return
@@ -271,10 +287,34 @@ export default function FPExamActPage() {
         }
     }
 
-    const handlePullFromSheets = (targetActId = null) => {
-        const targetAct = targetActId ? acts.find((a) => a.id === targetActId) : null
-        const targetSpreadsheetId = targetAct?.spreadsheetId || examActLink?.spreadsheetId
-        const targetSheetTitle = targetAct?.googleSheetTitle || examActLink?.sheetTitle
+    const handlePullFromSheets = async (targetActId = null) => {
+        let targetAct = targetActId ? acts.find((a) => a.id === targetActId) : null
+        let targetSpreadsheetId = targetAct?.spreadsheetId || examActLink?.spreadsheetId
+        let targetSheetTitle = targetAct?.googleSheetTitle || examActLink?.sheetTitle
+
+        if (!targetSpreadsheetId) {
+            setPulling(true)
+            const toastId = toast.loading('Buscando vínculos en Google Drive...')
+            try {
+                const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+                toast.dismiss(toastId)
+                if (cloudRes.success) {
+                    const freshExamLink = useFPGoogleLinksStore.getState().links.examAct
+                    const freshCourses = useFPCourseStore.getState().courses
+                    targetSpreadsheetId = targetAct?.spreadsheetId || freshExamLink?.spreadsheetId
+                    targetSheetTitle = targetAct?.googleSheetTitle || freshExamLink?.sheetTitle
+                    if (targetSpreadsheetId) {
+                        toast.success('¡Vínculo detectado automáticamente desde Google Drive!')
+                    }
+                }
+            } catch (err) {
+                toast.dismiss(toastId)
+                console.warn('[FPExamActPage] Error buscando en Drive:', err)
+            } finally {
+                setPulling(false)
+            }
+        }
+
         if (!targetSpreadsheetId) {
             setShowLinkModal(true)
             return
@@ -300,6 +340,7 @@ export default function FPExamActPage() {
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')
+            saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
             await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
         } catch (error) {
             console.error('[FPExamActPage] Error al vincular y descargar:', error)
@@ -337,6 +378,7 @@ export default function FPExamActPage() {
             try {
                 await deleteFPSpreadsheetTab(targetSpreadsheetId, targetTab, targetCurso)
                 toast.success(`"${targetName}" eliminada`)
+                saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
             } catch (error) {
                 if (isAuthError(error)) {
                     notifyAuthExpired(handleConfirmDelete)
@@ -348,6 +390,7 @@ export default function FPExamActPage() {
             }
         } else {
             toast.success(`"${targetName}" eliminada`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
         }
     }
 
@@ -776,18 +819,50 @@ export default function FPExamActPage() {
                         value={linkInput}
                         onChange={(e) => setLinkInput(e.target.value)}
                     />
-                    <div className="flex justify-end gap-2 pt-2">
-                        <Button variant="ghost" onClick={() => setShowLinkModal(false)}>
-                            Cancelar
-                        </Button>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                         <Button
-                            icon={Link2}
-                            loading={linking}
+                            variant="outline"
+                            icon={Cloud}
                             disabled={linking}
-                            onClick={handleLinkAndPull}
+                            onClick={async () => {
+                                setLinking(true)
+                                const toastId = toast.loading('Buscando en Google Drive...')
+                                try {
+                                    const res = await autoDiscoverAndSyncCloudRegistry()
+                                    toast.dismiss(toastId)
+                                    if (res.success) {
+                                        toast.success('¡Vínculos detectados desde Drive!')
+                                        setShowLinkModal(false)
+                                        const freshLink = useFPGoogleLinksStore.getState().links.examAct
+                                        if (freshLink?.spreadsheetId) {
+                                            executePull(freshLink.spreadsheetId, freshLink.sheetTitle)
+                                        }
+                                    } else {
+                                        toast.error('No se encontraron vínculos guardados en Google Drive')
+                                    }
+                                } catch (e) {
+                                    toast.dismiss(toastId)
+                                    toast.error('Error buscando en Drive')
+                                } finally {
+                                    setLinking(false)
+                                }
+                            }}
                         >
-                            Vincular y Descargar
+                            Buscar en Google Drive
                         </Button>
+                        <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => setShowLinkModal(false)}>
+                                Cancelar
+                            </Button>
+                            <Button
+                                icon={Link2}
+                                loading={linking}
+                                disabled={linking}
+                                onClick={handleLinkAndPull}
+                            >
+                                Vincular y Descargar
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </Modal>

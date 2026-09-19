@@ -20,9 +20,14 @@ const loadScript = (src) => new Promise((resolve, reject) => {
     document.head.appendChild(script)
 })
 
+let currentAccessToken = null
+
 // Inyectar el token de acceso recibido de GIS directamente en gapi.client
 function setGapiToken(response) {
     if (!response || response.error) return
+    if (response.access_token) {
+        currentAccessToken = response.access_token
+    }
     if (typeof gapi !== 'undefined' && gapi.client && response.access_token) {
         gapi.client.setToken({
             access_token: response.access_token,
@@ -182,13 +187,14 @@ export async function signOut() {
         clearTimeout(refreshTimerId)
         refreshTimerId = null
     }
-    if (gapi.client.getToken() !== null) {
+    if (typeof gapi !== 'undefined' && gapi?.client?.getToken() !== null) {
         google.accounts.oauth2.revoke(gapi.client.getToken().access_token, () => {
             console.log('[GoogleAuth] Token revocado correctamente')
         })
         gapi.client.setToken('')
     }
     currentUser = null
+    currentAccessToken = null
 }
 
 // Obtener usuario actual
@@ -201,9 +207,12 @@ export function isSignedIn() {
     return currentUser !== null
 }
 
-// Obtener token de acceso (stub)
+// Obtener token de acceso activo
 export function getAccessToken() {
     if (!isGoogleConfigured()) return null
-    // En producción: gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token
-    return null
+    if (typeof gapi !== 'undefined' && gapi?.client?.getToken()) {
+        const token = gapi.client.getToken()
+        if (token?.access_token) return token.access_token
+    }
+    return currentAccessToken
 }

@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
-import { Link2, ExternalLink, Trash2 } from 'lucide-react'
+import { Link2, ExternalLink, Trash2, Cloud, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import { linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isGoogleConfigured } from '../../infrastructure/google/googleConfig'
+import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 
 const DOCS = [
@@ -25,6 +26,7 @@ export default function FPGoogleLinksSection() {
 
     const [inputs, setInputs] = useState({})
     const [loadingKey, setLoadingKey] = useState(null)
+    const [syncingCloud, setSyncingCloud] = useState(false)
 
     const handleLink = async (key, label) => {
         if (!googleLinked) {
@@ -45,6 +47,7 @@ export default function FPGoogleLinksSection() {
             const result = await linkFPDocument(value)
             setLink(key, result)
             toast.success(`"${label}" vinculado correctamente`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPGoogleLinksSection] Error guardando registro en Drive:', err))
         } catch (error) {
             console.error('[FPGoogleLinksSection] Error vinculando:', error)
             if (isAuthError(error)) {
@@ -59,15 +62,95 @@ export default function FPGoogleLinksSection() {
         }
     }
 
+    const handleClear = async (key, label) => {
+        clearLink(key)
+        toast.success(`"${label}" desvinculado`)
+        saveFPCloudRegistry().catch((err) => console.warn('[FPGoogleLinksSection] Error guardando en Drive:', err))
+    }
+
+    const handlePullFromDrive = async () => {
+        if (!googleLinked) {
+            toast.error('Primero vinculá tu cuenta de Google')
+            return
+        }
+        setSyncingCloud(true)
+        const toastId = toast.loading('Buscando vínculos en Google Drive...')
+        try {
+            const res = await autoDiscoverAndSyncCloudRegistry()
+            toast.dismiss(toastId)
+            if (res.success) {
+                toast.success(`¡Sincronizado! Se restauraron ${res.linksRestored} vínculo(s) y ${res.coursesRestored} curso(s).`)
+            } else {
+                toast.error('No se encontraron vínculos guardados en tu Google Drive.')
+            }
+        } catch (err) {
+            toast.dismiss(toastId)
+            toast.error('Error buscando vínculos en Google Drive')
+        } finally {
+            setSyncingCloud(false)
+        }
+    }
+
+    const handleSaveToDrive = async () => {
+        if (!googleLinked) {
+            toast.error('Primero vinculá tu cuenta de Google')
+            return
+        }
+        setSyncingCloud(true)
+        const toastId = toast.loading('Guardando vínculos en Google Drive...')
+        try {
+            const ok = await saveFPCloudRegistry()
+            toast.dismiss(toastId)
+            if (ok) {
+                toast.success('Vínculos guardados en tu Google Drive con éxito.')
+            } else {
+                toast.error('No se pudieron guardar los vínculos en Google Drive.')
+            }
+        } catch (err) {
+            toast.dismiss(toastId)
+            toast.error('Error al guardar en Google Drive')
+        } finally {
+            setSyncingCloud(false)
+        }
+    }
+
     return (
         <Card className="lg:col-span-2">
-            <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
-                <Link2 className="w-4 h-4 text-primary" />
-                <h2 className="text-base font-semibold text-text-primary">Archivos de Google Sheets — Formación Profesional</h2>
+            <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                    <Link2 className="w-4 h-4 text-primary" />
+                    <h2 className="text-base font-semibold text-text-primary">Archivos de Google Sheets — Formación Profesional</h2>
+                </div>
+                {googleLinked && (
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            icon={Cloud}
+                            loading={syncingCloud}
+                            disabled={syncingCloud}
+                            onClick={handlePullFromDrive}
+                            title="Descarga automáticamente todos los vínculos que guardaste desde tu PC o celular"
+                        >
+                            Traer de Google Drive
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={RefreshCw}
+                            loading={syncingCloud}
+                            disabled={syncingCloud}
+                            onClick={handleSaveToDrive}
+                            title="Guarda los vínculos actuales en Google Drive para que tus otros dispositivos los reconozcan"
+                        >
+                            Guardar en Drive
+                        </Button>
+                    </div>
+                )}
             </div>
             <CardBody className="space-y-5">
                 <p className="text-sm text-text-secondary">
-                    Pegá el link de cada archivo que te comparten (ya convertido a Google Sheets nativo).
+                    Pegá el link de cada archivo que te comparten (ya convertido a Google Sheets nativo). Los vínculos se sincronizan automáticamente con tu Google Drive para que funcionen como espejo entre tu PC y tu celular.
                 </p>
                 {DOCS.map((doc) => {
                     const linked = links[doc.key]
@@ -93,7 +176,7 @@ export default function FPGoogleLinksSection() {
                                         variant="ghost"
                                         size="sm"
                                         icon={Trash2}
-                                        onClick={() => clearLink(doc.key)}
+                                        onClick={() => handleClear(doc.key, doc.label)}
                                     >
                                         Desvincular
                                     </Button>
