@@ -74,6 +74,7 @@ export async function autoInitIfLinked(wasLinked) {
 
 // Inicializar el cliente Google Real
 export async function initGoogleAuth() {
+    if (isInitialized) return true
     if (!isGoogleConfigured()) {
         console.warn('[GoogleAuth] Credenciales no detectadas en .env.local')
         return false

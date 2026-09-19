@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2 } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import useSettingsStore from '../../core/stores/useSettingsStore'
 import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, buildFPCourseTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
@@ -33,6 +35,8 @@ export default function FPCoursesPage() {
     const importOrUpdateCourse = useFPCourseStore((s) => s.importOrUpdateCourse)
     const syncAllFromCloud = useFPCourseStore((s) => s.syncAllFromCloud)
 
+    const navigate = useNavigate()
+    const googleLinked = useSettingsStore((s) => s.googleLinked)
     const [selectedId, setSelectedId] = useState(null)
     const selected = courses.find((c) => c.id === selectedId)
     const courseLink = useFPGoogleLinksStore((s) => s.links.course)
@@ -58,9 +62,17 @@ export default function FPCoursesPage() {
             toast.error('Pegá el link o ID de la hoja de cálculo del curso')
             return
         }
+        if (!googleLinked) {
+            toast.error('Primero debés vincular tu cuenta de Google en Configuración.', { duration: 6000 })
+            return
+        }
         setCreatingFromLink(true)
         try {
             const linkRes = await linkFPDocument(newCourseLinkInput.trim())
+            if (!linkRes) {
+                toast.error('No se pudo interpretar el archivo de Google Sheets')
+                return
+            }
             let courseData = null
             try {
                 courseData = await readFPCourseSheet(linkRes.spreadsheetId, linkRes.sheetTitle)
@@ -102,8 +114,16 @@ export default function FPCoursesPage() {
                 toast.success('Curso creado y vinculado a la hoja de Google Sheets')
             }
         } catch (error) {
-            console.error(error)
-            toast.error('No se pudo vincular la hoja. Verificá el link y tus permisos de Google Drive.')
+            console.error('[FPCoursesPage] Error al crear curso desde link:', error)
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleCreateCourseFromLink)
+            } else if (error?.status === 403 || error?.result?.error?.code === 403) {
+                toast.error('Permiso denegado: tu cuenta de Google no tiene acceso a esta hoja. Compartila con tu cuenta.', { duration: 6000 })
+            } else if (error?.status === 404 || error?.result?.error?.code === 404) {
+                toast.error('Hoja no encontrada en Google Drive. Verificá que el link sea correcto.', { duration: 5000 })
+            } else {
+                toast.error('No se pudo vincular la hoja. Verificá que sea una hoja nativa de Google Sheets y tus permisos de Google Drive.')
+            }
         } finally {
             setCreatingFromLink(false)
         }
@@ -287,16 +307,33 @@ export default function FPCoursesPage() {
             toast.error('Pegá el link o ID de la hoja de cálculo')
             return
         }
+        if (!googleLinked) {
+            toast.error('Primero debés vincular tu cuenta de Google en Configuración.', { duration: 6000 })
+            return
+        }
         setLinking(true)
         try {
             const result = await linkFPDocument(linkInput.trim())
+            if (!result) {
+                toast.error('No se pudo interpretar el archivo de Google Sheets')
+                return
+            }
             setLink('course', result)
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')
             await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
         } catch (error) {
-            toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+            console.error('[FPCoursesPage] Error al vincular y descargar:', error)
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleLinkAndPull)
+            } else if (error?.status === 403 || error?.result?.error?.code === 403) {
+                toast.error('Permiso denegado: tu cuenta de Google no tiene acceso a esta planilla.', { duration: 6000 })
+            } else if (error?.status === 404 || error?.result?.error?.code === 404) {
+                toast.error('Hoja no encontrada en Google Drive. Verificá que el link sea correcto.', { duration: 5000 })
+            } else {
+                toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+            }
         } finally {
             setLinking(false)
         }
@@ -631,6 +668,25 @@ export default function FPCoursesPage() {
                 title="Nuevo Curso"
             >
                 <div className="space-y-4 p-2">
+                    {!googleLinked && (
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2.5">
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                            <div className="space-y-1">
+                                <p className="font-semibold">Cuenta de Google no vinculada en este dispositivo</p>
+                                <p>Para poder leer y sincronizar planillas de Google Drive, primero debés conectar tu cuenta de Google en Configuración.</p>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowNewCourseModal(false)
+                                        navigate('/settings')
+                                    }}
+                                    className="font-semibold underline hover:text-amber-900 dark:hover:text-amber-100 mt-1 inline-block cursor-pointer"
+                                >
+                                    Ir a Configuración para conectar Google →
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     <p className="text-sm text-text-secondary">
                         Ingresá el link o ID de la hoja de Google Sheets de este nuevo curso. La aplicación mapeará automáticamente todos los datos del curso y la lista de alumnos:
                     </p>

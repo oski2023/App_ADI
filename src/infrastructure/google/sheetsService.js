@@ -3,6 +3,7 @@
 // Actualmente: log + noop para desarrollo local
 
 import { SHEET_NAMES, isGoogleConfigured } from './googleConfig'
+import { initGoogleAuth } from './googleAuth'
 
 let spreadsheetId = null
 
@@ -191,11 +192,17 @@ export function extractSheetGid(urlOrId) {
 // Vincular un documento de FP: guarda spreadsheetId + la pestaña EXACTA indicada por el gid del link
 // (si el link no trae gid, usa la primera pestaña del archivo)
 export async function linkFPDocument(urlOrId) {
-    if (!isGoogleConfigured()) return null
+    if (!isGoogleConfigured()) {
+        throw new Error('Google no está configurado en la aplicación.')
+    }
 
     const id = extractSpreadsheetId(urlOrId)
     if (!id) throw new Error('No se pudo interpretar el link o ID de la hoja')
     const gid = extractSheetGid(urlOrId)
+
+    if (typeof gapi === 'undefined' || !gapi?.client?.sheets) {
+        await initGoogleAuth()
+    }
 
     try {
         const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: id })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
@@ -111,21 +111,53 @@ export default function FPAttendanceSheetPage() {
         toast.success(`Nueva planilla de asistencia para Curso Nº ${activeCourse.cursoNumero || '—'} (${initialStudents.length} alumnos heredados)`)
     }
 
+    // Alumnos del curso: reúne los alumnos cargados en la planilla y los de la Ficha de Curso correspondiente
+    const matchingCourse = courses.find((c) =>
+        (c.id && c.id === selected?.cursoId) ||
+        (c.cursoNumero && selected?.cursoNumero && c.cursoNumero.trim().toLowerCase() === selected.cursoNumero.trim().toLowerCase())
+    ) || activeCourse
+
+    const allCourseStudents = useMemo(() => {
+        if (!selected) return []
+        const list = []
+        const seen = new Set()
+
+        // 1. Alumnos de esta planilla de asistencia
+        const sheetStudents = selected.students || []
+        sheetStudents.forEach((st) => {
+            const key = (st.apellidosNombres || '').trim().toLowerCase()
+            if (key && !seen.has(key)) {
+                seen.add(key)
+                list.push(st)
+            }
+        })
+
+        // 2. Alumnos de la Ficha de Curso vinculada
+        const courseStudents = matchingCourse?.students || []
+        courseStudents.forEach((st) => {
+            const key = (st.apellidosNombres || '').trim().toLowerCase()
+            if (key && !seen.has(key)) {
+                seen.add(key)
+                list.push(st)
+            }
+        })
+
+        return list
+    }, [selected?.students, matchingCourse?.students])
+
     const handleOpenAddBajaModal = () => {
         if (!selected) return
-        const availableStudents = selected.students || []
-        if (availableStudents.length > 0) {
-            setBajaStudentId(availableStudents[0].id)
-            setShowAddBajaModal(true)
+        if (allCourseStudents.length > 0) {
+            setBajaStudentId(allCourseStudents[0].id)
         } else {
-            addBaja(selected.id)
-            toast.info('Se agregó una fila de baja para cargar manualmente')
+            setBajaStudentId('')
         }
+        setShowAddBajaModal(true)
     }
 
     const handleConfirmAddBaja = () => {
         if (!selected) return
-        const chosen = selected.students.find((st) => st.id === bajaStudentId)
+        const chosen = allCourseStudents.find((st) => st.id === bajaStudentId)
         if (chosen) {
             addBaja(selected.id, {
                 sexo: (chosen.sexo || '').toUpperCase(),
@@ -134,8 +166,10 @@ export default function FPAttendanceSheetPage() {
             toast.success(`Baja registrada para ${chosen.apellidosNombres}`)
         } else {
             addBaja(selected.id)
+            toast.info('Se agregó una fila de baja para cargar manualmente')
         }
         setShowAddBajaModal(false)
+        setBajaStudentId('')
     }
 
     const handleSyncStudentsFromCourse = () => {
@@ -330,16 +364,26 @@ export default function FPAttendanceSheetPage() {
             toast.success('Archivo vinculado correctamente')
             await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
         } catch (error) {
-            toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+            console.error('[FPAttendanceSheetPage] Error al vincular y descargar:', error)
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleLinkAndPull)
+            } else if (error?.status === 403 || error?.result?.error?.code === 403) {
+                toast.error('Permiso denegado: tu cuenta de Google no tiene acceso a esta planilla.', { duration: 6000 })
+            } else if (error?.status === 404 || error?.result?.error?.code === 404) {
+                toast.error('Hoja no encontrada en Google Drive. Verificá que el link sea correcto.', { duration: 5000 })
+            } else {
+                toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+            }
         } finally {
             setLinking(false)
         }
     }
 
-    if (selected) {
-        return (
-            <div className="space-y-6 animate-fade-in">
-                <div className="flex flex-wrap items-center gap-3">
+    return (
+        <div className="space-y-6 animate-fade-in">
+            {selected ? (
+                <>
+                    <div className="flex flex-wrap items-center gap-3">
                     <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
                         Volver
                     </Button>
@@ -594,13 +638,10 @@ export default function FPAttendanceSheetPage() {
                         <Input label="Recibió" value={selected.recibio} onChange={(e) => updateSheet(selected.id, { recibio: e.target.value })} />
                     </CardBody>
                 </Card>
-            </div>
-        )
-    }
-
-    return (
-        <div className="space-y-6 animate-fade-in">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+                </>
+            ) : (
+                <>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-text-primary">Asistencia de Alumnos</h1>
                     <p className="text-sm text-text-secondary mt-1">Formación Profesional</p>
@@ -707,6 +748,8 @@ export default function FPAttendanceSheetPage() {
                     </Card>
                 ))}
             </div>
+            </>
+        )}
 
             {/* Modal de confirmación al eliminar */}
             <ConfirmModal
@@ -820,7 +863,7 @@ export default function FPAttendanceSheetPage() {
                     <p className="text-sm text-text-secondary">
                         Seleccioná el alumno/a cargado en este curso para registrar su baja. Se autocompletará su Apellidos y Nombres y Sexo:
                     </p>
-                    {selected && selected.students.length > 0 ? (
+                    {allCourseStudents && allCourseStudents.length > 0 ? (
                         <div>
                             <label className="block text-xs font-semibold text-text-primary mb-1.5">
                                 Alumno/a del curso:
@@ -830,25 +873,32 @@ export default function FPAttendanceSheetPage() {
                                 value={bajaStudentId}
                                 onChange={(e) => setBajaStudentId(e.target.value)}
                             >
-                                {selected.students.map((st) => (
-                                    <option key={st.id} value={st.id}>
-                                        {st.apellidosNombres || 'Sin nombre'} (Sexo: {st.sexo || '—'})
-                                    </option>
-                                ))}
+                                <option value="">-- Seleccionar un alumno/a del curso --</option>
+                                {allCourseStudents.map((st) => {
+                                    const isAlreadyBaja = (selected?.bajas || []).some(
+                                        (b) => b.apellidosNombres && st.apellidosNombres && b.apellidosNombres.trim().toLowerCase() === st.apellidosNombres.trim().toLowerCase()
+                                    )
+                                    return (
+                                        <option key={st.id} value={st.id}>
+                                            {st.apellidosNombres || 'Sin nombre'} {st.sexo ? `(Sexo: ${st.sexo})` : ''} {isAlreadyBaja ? '— [Ya en bajas]' : ''}
+                                        </option>
+                                    )
+                                })}
                             </select>
                         </div>
                     ) : (
-                        <p className="text-xs text-amber-500">
-                            No hay alumnos cargados en este informe para seleccionar.
-                        </p>
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-600 dark:text-amber-400">
+                            No hay alumnos cargados en este curso o informe para seleccionar. Podés cargar una fila de baja en blanco y completarla manualmente.
+                        </div>
                     )}
                     <div className="flex items-center justify-between pt-2">
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                                addBaja(selected.id)
+                                if (selected) addBaja(selected.id)
                                 setShowAddBajaModal(false)
+                                setBajaStudentId('')
                             }}
                         >
                             Cargar en Blanco
@@ -859,7 +909,7 @@ export default function FPAttendanceSheetPage() {
                             </Button>
                             <Button
                                 onClick={handleConfirmAddBaja}
-                                disabled={!selected || selected.students.length === 0}
+                                disabled={!bajaStudentId}
                             >
                                 Confirmar Baja
                             </Button>

@@ -6,7 +6,12 @@ export function isAuthError(error) {
     return (
         error?.status === 401 ||
         error?.result?.error?.code === 401 ||
-        (typeof error?.message === 'string' && error.message.includes('401'))
+        error?.result?.error?.status === 'UNAUTHENTICATED' ||
+        (typeof error?.message === 'string' && (
+            error.message.includes('401') ||
+            error.message.toLowerCase().includes('unauthenticated') ||
+            error.message.toLowerCase().includes('login required')
+        ))
     )
 }
 

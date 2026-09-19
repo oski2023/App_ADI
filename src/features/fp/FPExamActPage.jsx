@@ -302,7 +302,16 @@ export default function FPExamActPage() {
             toast.success('Archivo vinculado correctamente')
             await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
         } catch (error) {
-            toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+            console.error('[FPExamActPage] Error al vincular y descargar:', error)
+            if (isAuthError(error)) {
+                notifyAuthExpired(handleLinkAndPull)
+            } else if (error?.status === 403 || error?.result?.error?.code === 403) {
+                toast.error('Permiso denegado: tu cuenta de Google no tiene acceso a esta planilla.', { duration: 6000 })
+            } else if (error?.status === 404 || error?.result?.error?.code === 404) {
+                toast.error('Hoja no encontrada en Google Drive. Verificá que el link sea correcto.', { duration: 5000 })
+            } else {
+                toast.error('No se pudo vincular el archivo. Verificá el link y tus permisos.')
+            }
         } finally {
             setLinking(false)
         }

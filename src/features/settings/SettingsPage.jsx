@@ -54,10 +54,16 @@ export default function SettingsPage() {
                 // Actualizar info de usuario con datos de Google
                 setUser({
                     ...googleUser,
-                    role: 'Docente'
+                    role: user?.role || 'Docente'
                 })
 
-                    if (linkMode === 'existing') {
+                if (profileType === 'fp') {
+                    setGoogleLinked(true, null)
+                    toast.success('¡Cuenta de Google conectada exitosamente!')
+                    return
+                }
+
+                if (linkMode === 'existing') {
                     if (!existingSheetInput.trim()) {
                         toast.error('Pegá el link o ID de tu hoja de Google Sheets')
                         setIsLinking(false)
@@ -282,10 +288,10 @@ export default function SettingsPage() {
                             <div className="flex gap-2">
                                 <Button
                                     variant="primary"
-                                    onClick={() => window.open(spreadsheetUrl, '_blank')}
+                                    onClick={() => window.open(spreadsheetUrl || 'https://drive.google.com', '_blank')}
                                     className="flex-1 justify-center bg-success hover:bg-success/90 border-0"
                                 >
-                                    Ver en Drive
+                                    {spreadsheetUrl ? 'Ver en Drive' : 'Abrir Google Drive'}
                                 </Button>
                                 <Button
                                     variant="outline"
@@ -297,7 +303,23 @@ export default function SettingsPage() {
                                     Desvincular
                                 </Button>
                             </div>
-                                                ) : (
+                        ) : profileType === 'fp' ? (
+                            <div className="space-y-3">
+                                <p className="text-xs text-text-secondary">
+                                    Conectá tu cuenta de Google para habilitar la lectura y sincronización de tus planillas de Formación Profesional (Fichas de curso, temas, asistencia y actas).
+                                </p>
+                                <Button
+                                    variant="primary"
+                                    icon={ExternalLink}
+                                    onClick={handleGoogleConnection}
+                                    loading={isLinking}
+                                    disabled={isLinking}
+                                    className="w-full justify-center"
+                                >
+                                    Vincular con Google
+                                </Button>
+                            </div>
+                        ) : (
                             <div className="space-y-3">
                                 <div className="flex gap-4 text-sm text-text-primary">
                                     <label className="flex items-center gap-2 cursor-pointer">

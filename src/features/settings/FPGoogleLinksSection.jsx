@@ -5,8 +5,10 @@ import { Input } from '../../shared/components/Input'
 import { Link2, ExternalLink, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import useSettingsStore from '../../core/stores/useSettingsStore'
 import { linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { isGoogleConfigured } from '../../infrastructure/google/googleConfig'
+import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 
 const DOCS = [
     { key: 'course', label: 'Ficha de Curso' },
@@ -19,13 +21,18 @@ export default function FPGoogleLinksSection() {
     const links = useFPGoogleLinksStore((s) => s.links)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
     const clearLink = useFPGoogleLinksStore((s) => s.clearLink)
+    const googleLinked = useSettingsStore((s) => s.googleLinked)
 
     const [inputs, setInputs] = useState({})
     const [loadingKey, setLoadingKey] = useState(null)
 
     const handleLink = async (key, label) => {
+        if (!googleLinked) {
+            toast.error('Primero vinculá tu cuenta de Google en la sección de arriba ("Integración Google Workspace")', { duration: 6000 })
+            return
+        }
         if (!isGoogleConfigured()) {
-            toast.error('Primero vinculá tu cuenta de Google (sección de arriba)')
+            toast.error('Google no está configurado en la app')
             return
         }
         const value = inputs[key]
@@ -39,7 +46,14 @@ export default function FPGoogleLinksSection() {
             setLink(key, result)
             toast.success(`"${label}" vinculado correctamente`)
         } catch (error) {
-            toast.error(`No se pudo vincular "${label}"`)
+            console.error('[FPGoogleLinksSection] Error vinculando:', error)
+            if (isAuthError(error)) {
+                notifyAuthExpired(() => handleLink(key, label))
+            } else if (error?.status === 403 || error?.result?.error?.code === 403) {
+                toast.error(`Permiso denegado: asegurate de tener acceso a "${label}" con tu cuenta de Google.`, { duration: 6000 })
+            } else {
+                toast.error(`No se pudo vincular "${label}". Verificá el link y tus permisos.`)
+            }
         } finally {
             setLoadingKey(null)
         }
