@@ -86,19 +86,24 @@ const useFPAttendanceSheetStore = create(
                                 (es) => es.apellidosNombres && es.apellidosNombres.trim().toLowerCase() === (cSt.apellidosNombres || '').trim().toLowerCase()
                             )
                             if (found) {
+                                const days = found.days || emptyDays()
+                                const presCount = DIAS_MES.filter((d) => (days[d] || '').trim().toUpperCase() === 'P').length
+                                const ausCount = DIAS_MES.filter((d) => (days[d] || '').trim().toUpperCase() === 'A').length
                                 return {
                                     ...found,
-                                    sexo: cSt.sexo || found.sexo,
+                                    sexo: (cSt.sexo || found.sexo || '').toUpperCase(),
                                     apellidosNombres: cSt.apellidosNombres,
+                                    totalPres: String(presCount),
+                                    totalAus: String(ausCount),
                                 }
                             }
                             return {
                                 id: crypto.randomUUID(),
-                                sexo: cSt.sexo || '',
+                                sexo: (cSt.sexo || '').toUpperCase(),
                                 apellidosNombres: cSt.apellidosNombres || '',
                                 days: emptyDays(),
-                                totalAus: '',
-                                totalPres: '',
+                                totalAus: '0',
+                                totalPres: '0',
                                 temasTratados: '',
                             }
                         })
@@ -229,6 +234,26 @@ const useFPAttendanceSheetStore = create(
                             return {
                                 ...st,
                                 days: newDays,
+                                totalPres: String(presCount),
+                                totalAus: String(ausCount),
+                            }
+                        })
+                        return { ...s, students: updatedStudents }
+                    }),
+                }))
+                get().calculateMovimiento(sheetId)
+            },
+
+            recalculateAttendanceTotals: (sheetId) => {
+                set((state) => ({
+                    sheets: state.sheets.map((s) => {
+                        if (s.id !== sheetId) return s
+                        const updatedStudents = (s.students || []).map((st) => {
+                            const days = st.days || {}
+                            const presCount = DIAS_MES.filter((d) => (days[d] || '').trim().toUpperCase() === 'P').length
+                            const ausCount = DIAS_MES.filter((d) => (days[d] || '').trim().toUpperCase() === 'A').length
+                            return {
+                                ...st,
                                 totalPres: String(presCount),
                                 totalAus: String(ausCount),
                             }

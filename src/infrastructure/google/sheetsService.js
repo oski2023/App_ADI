@@ -880,12 +880,19 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
             const row = FP_ATTENDANCE_STUDENT_START_ROW + idx
             pushCell(`B${row}`, st.sexo)
             pushCell(`C${row}`, st.apellidosNombres)
+            let ausCount = 0
+            let presCount = 0
             for (let d = 1; d <= 31; d++) {
                 const colLetter = numberToColumnLetter(FP_ATTENDANCE_DAY_START_COL + (d - 1))
-                pushCell(`${colLetter}${row}`, st.days[d])
+                const val = (st.days?.[d] || '').trim().toUpperCase()
+                if (val === 'A') ausCount++
+                if (val === 'P') presCount++
+                pushCell(`${colLetter}${row}`, st.days?.[d] || '')
             }
-            pushCell(`AK${row}`, st.totalAus)
-            pushCell(`AL${row}`, st.totalPres)
+            const finalAus = (st.totalAus !== '' && st.totalAus !== undefined && Number(st.totalAus) > 0) ? st.totalAus : String(ausCount)
+            const finalPres = (st.totalPres !== '' && st.totalPres !== undefined && Number(st.totalPres) > 0) ? st.totalPres : String(presCount)
+            pushCell(`AK${row}`, finalAus)
+            pushCell(`AL${row}`, finalPres)
             pushCell(`AM${row}`, st.temasTratados)
         })
 

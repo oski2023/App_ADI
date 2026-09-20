@@ -5,10 +5,11 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud, AlertTriangle } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
+import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
 import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, buildFPCourseTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
@@ -457,10 +458,38 @@ export default function FPCoursesPage() {
                 <Card>
                     <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
                         <h2 className="text-base font-semibold text-text-primary">Nómina de Estudiantes</h2>
-                        <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
+                        <Button
+                            icon={Plus}
+                            size="sm"
+                            onClick={() => {
+                                addStudent(selected.id)
+                                useFPUpdateAlertStore.getState().setPendingUpdate(selected.id, selected.especialidad, selected.cursoNumero)
+                                toast(
+                                    (t) => (
+                                        <div className="flex flex-col gap-1">
+                                            <span className="font-bold text-amber-700 dark:text-amber-300">¡Alumno agregado a Ficha de Curso!</span>
+                                            <span className="text-xs text-text-secondary">
+                                                Recordá presionar <strong>"Actualizar de Ficha de Curso"</strong> en <strong>Asistencia de Alumnos</strong> y en <strong>Actas de Examen</strong>.
+                                            </span>
+                                        </div>
+                                    ),
+                                    { duration: 7000, icon: '📋' }
+                                )
+                            }}
+                        >
                             Agregar Estudiante
                         </Button>
                     </div>
+
+                    {useFPUpdateAlertStore((st) => st.hasAttendanceAlert(selected.id, selected.cursoNumero) || st.hasExamAlert(selected.id, selected.cursoNumero)) && (
+                        <div className="mx-5 mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-200 animate-fade-in">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span>
+                                <strong>Recordatorio de sincronización:</strong> Tenés alumnos nuevos cargados. Recordá presionar el botón <em>"Actualizar de Ficha de Curso"</em> cuando visites <strong>Asistencia de Alumnos</strong> y <strong>Actas de Examen</strong>.
+                            </span>
+                        </div>
+                    )}
+
                     <CardBody className="overflow-x-auto">
                         <table className="w-full text-sm min-w-[1100px]">
                             <thead>
@@ -468,7 +497,7 @@ export default function FPCoursesPage() {
                                     <th className="py-2 pr-2 w-10">Nº</th>
                                     <th className="py-2 pr-2">Tipo Doc.</th>
                                     <th className="py-2 pr-2">Número Doc.</th>
-                                    <th className="py-2 pr-2">Sexo</th>
+                                    <th className="py-2 pr-2 w-20">Sexo</th>
                                     <th className="py-2 pr-2">Apellidos y Nombres</th>
                                     <th className="py-2 pr-2">Fecha Nac.</th>
                                     <th className="py-2 pr-2">Nacionalidad</th>
@@ -484,7 +513,18 @@ export default function FPCoursesPage() {
                                         <td className="py-1.5 pr-2 text-text-muted">{idx + 1}</td>
                                         <td className="py-1.5 pr-2"><Input value={s.documentoTipo} onChange={(e) => updateStudent(selected.id, s.id, { documentoTipo: e.target.value })} /></td>
                                         <td className="py-1.5 pr-2"><Input value={s.documentoNumero} onChange={(e) => updateStudent(selected.id, s.id, { documentoNumero: e.target.value })} /></td>
-                                        <td className="py-1.5 pr-2"><Input value={s.sexo} onChange={(e) => updateStudent(selected.id, s.id, { sexo: e.target.value })} /></td>
+                                        <td className="py-1.5 pr-2">
+                                            <select
+                                                className="w-16 px-2 py-1.5 rounded-lg border border-border bg-bg-card text-text-primary text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
+                                                value={(s.sexo || '').toUpperCase()}
+                                                onChange={(e) => updateStudent(selected.id, s.id, { sexo: e.target.value.toUpperCase() })}
+                                            >
+                                                <option value="">—</option>
+                                                <option value="M">M</option>
+                                                <option value="F">F</option>
+                                                <option value="X">X</option>
+                                            </select>
+                                        </td>
                                         <td className="py-1.5 pr-2"><Input value={s.apellidosNombres} onChange={(e) => updateStudent(selected.id, s.id, { apellidosNombres: e.target.value })} /></td>
                                         <td className="py-1.5 pr-2">
                                             <Input

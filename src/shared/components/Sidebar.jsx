@@ -7,6 +7,7 @@ import {
 import { useState } from 'react'
 import useAuthStore from '../../core/stores/useAuthStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
+import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
 import { useSyncStore, SYNC_STATUS } from '../../infrastructure/google/syncManager'
 
 const navItemsEscuela = [
@@ -119,7 +120,13 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClo
                             title={collapsed && !isMobileOpen ? label : undefined}
                         >
                             <Icon className="w-5 h-5 shrink-0" />
-                            {isExpanded && <span className="truncate">{label}</span>}
+                            {isExpanded && <span className="truncate flex-1">{label}</span>}
+                            {path === '/fp/attendance-sheet' && Object.values(useFPUpdateAlertStore.getState().pendingUpdates || {}).some((u) => u.attendance) && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0 ring-2 ring-amber-500/20" title="Alumnos pendientes de actualizar desde Ficha de Curso" />
+                            )}
+                            {path === '/fp/exam-act' && Object.values(useFPUpdateAlertStore.getState().pendingUpdates || {}).some((u) => u.exam) && (
+                                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0 ring-2 ring-amber-500/20" title="Estudiantes pendientes de actualizar desde Ficha de Curso" />
+                            )}
                         </NavLink>
                     ))}
                 </nav>

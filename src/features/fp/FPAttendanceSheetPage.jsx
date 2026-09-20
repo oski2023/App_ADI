@@ -4,10 +4,11 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2, Cloud } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2, Cloud, AlertTriangle } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
 import { syncFPAttendanceSheet, readFPAttendanceSheet, readAllFPAttendanceSheets, clearFPAttendanceSheet, deleteFPSpreadsheetTab, buildFPAttendanceTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
@@ -181,6 +182,7 @@ export default function FPAttendanceSheetPage() {
         }
         syncStudentsFromCourse(selected.id, matchingCourse.students)
         calculateMovimiento(selected.id)
+        useFPUpdateAlertStore.getState().clearAttendanceAlert(matchingCourse.id, selected.cursoNumero)
         toast.success(`Lista de alumnos sincronizada desde Ficha de Curso (${matchingCourse.students.length} alumnos)`)
     }
 
@@ -493,6 +495,33 @@ export default function FPAttendanceSheetPage() {
                     </CardBody>
                 </Card>
 
+                {/* Banner recordatorio si se agregaron alumnos en Ficha de Curso */}
+                {useFPUpdateAlertStore((st) => st.hasAttendanceAlert(selected?.cursoId, selected?.cursoNumero)) && (
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4 animate-fade-in shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-bold text-text-primary">
+                                    Hay alumnos nuevos agregados en Ficha de Curso
+                                </h4>
+                                <p className="text-xs text-text-secondary mt-0.5">
+                                    Presioná el botón <strong>"Actualizar de Ficha de Curso"</strong> para sincronizar la nómina en esta planilla mensual.
+                                </p>
+                            </div>
+                        </div>
+                        <Button
+                            size="sm"
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0"
+                            icon={RefreshCw}
+                            onClick={handleSyncStudentsFromCourse}
+                        >
+                            Actualizar de Ficha de Curso
+                        </Button>
+                    </div>
+                )}
+
                 {/* Grilla de asistencia */}
                 <Card>
                     <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
@@ -528,62 +557,71 @@ export default function FPAttendanceSheetPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {selected.students.map((st, idx) => (
-                                    <tr key={st.id} className="border-b border-border-light/50">
-                                        <td className="py-1 pr-2 text-text-muted">{idx + 1}</td>
-                                        <td className="py-1 pr-2">
-                                            <input
-                                                className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary"
-                                                value={st.sexo}
-                                                maxLength={1}
-                                                onChange={(e) => updateStudent(selected.id, st.id, { sexo: e.target.value.toUpperCase() })}
-                                            />
-                                        </td>
-                                        <td className="py-1 pr-2">
-                                            <input
-                                                className="w-full min-w-[170px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
-                                                value={st.apellidosNombres}
-                                                onChange={(e) => updateStudent(selected.id, st.id, { apellidosNombres: e.target.value })}
-                                            />
-                                        </td>
-                                        {DIAS_MES.map((d) => (
-                                            <td key={d} className="py-1 px-0.5">
+                                {selected.students.map((st, idx) => {
+                                    const ausCount = DIAS_MES.filter((d) => (st.days?.[d] || '').trim().toUpperCase() === 'A').length
+                                    const presCount = DIAS_MES.filter((d) => (st.days?.[d] || '').trim().toUpperCase() === 'P').length
+                                    const valAus = (st.totalAus !== '' && st.totalAus !== undefined && Number(st.totalAus) > 0) ? st.totalAus : String(ausCount)
+                                    const valPres = (st.totalPres !== '' && st.totalPres !== undefined && Number(st.totalPres) > 0) ? st.totalPres : String(presCount)
+
+                                    return (
+                                        <tr key={st.id} className="border-b border-border-light/50">
+                                            <td className="py-1 pr-2 text-text-muted">{idx + 1}</td>
+                                            <td className="py-1 pr-2">
                                                 <input
-                                                    className="w-7 h-7 text-center rounded border border-border bg-bg-card text-text-primary text-xs"
-                                                    value={st.days[d]}
+                                                    className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary"
+                                                    value={st.sexo}
                                                     maxLength={1}
-                                                    onChange={(e) => updateStudentDay(selected.id, st.id, d, e.target.value.toUpperCase())}
+                                                    onChange={(e) => updateStudent(selected.id, st.id, { sexo: e.target.value.toUpperCase() })}
                                                 />
                                             </td>
-                                        ))}
-                                        <td className="py-1 px-1">
-                                            <input
-                                                className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary"
-                                                value={st.totalAus}
-                                                onChange={(e) => updateStudent(selected.id, st.id, { totalAus: e.target.value })}
-                                            />
-                                        </td>
-                                        <td className="py-1 px-1">
-                                            <input
-                                                className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary"
-                                                value={st.totalPres}
-                                                onChange={(e) => updateStudent(selected.id, st.id, { totalPres: e.target.value })}
-                                            />
-                                        </td>
-                                        <td className="py-1 pl-2">
-                                            <input
-                                                className="w-full min-w-[190px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
-                                                value={st.temasTratados}
-                                                onChange={(e) => updateStudent(selected.id, st.id, { temasTratados: e.target.value })}
-                                            />
-                                        </td>
-                                        <td className="py-1">
-                                            <button onClick={() => deleteStudent(selected.id, st.id)} className="text-text-muted hover:text-error transition-colors">
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            <td className="py-1 pr-2">
+                                                <input
+                                                    className="w-full min-w-[170px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
+                                                    value={st.apellidosNombres}
+                                                    onChange={(e) => updateStudent(selected.id, st.id, { apellidosNombres: e.target.value })}
+                                                />
+                                            </td>
+                                            {DIAS_MES.map((d) => (
+                                                <td key={d} className="py-1 px-0.5">
+                                                    <input
+                                                        className="w-7 h-7 text-center rounded border border-border bg-bg-card text-text-primary text-xs font-semibold"
+                                                        value={st.days[d]}
+                                                        maxLength={1}
+                                                        onChange={(e) => updateStudentDay(selected.id, st.id, d, e.target.value.toUpperCase())}
+                                                    />
+                                                </td>
+                                            ))}
+                                            <td className="py-1 px-1">
+                                                <input
+                                                    className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary font-bold text-xs"
+                                                    value={valAus}
+                                                    onChange={(e) => updateStudent(selected.id, st.id, { totalAus: e.target.value })}
+                                                    title="Total Ausentes (Suma 1 por cada 'A')"
+                                                />
+                                            </td>
+                                            <td className="py-1 px-1">
+                                                <input
+                                                    className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary font-bold text-xs"
+                                                    value={valPres}
+                                                    onChange={(e) => updateStudent(selected.id, st.id, { totalPres: e.target.value })}
+                                                    title="Total Presentes (Suma 1 por cada 'P')"
+                                                />
+                                            </td>
+                                            <td className="py-1 pl-2">
+                                                <input
+                                                    className="w-full min-w-[190px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
+                                                    value={st.temasTratados}
+                                                    onChange={(e) => updateStudent(selected.id, st.id, { temasTratados: e.target.value })}
+                                                />
+                                            </td>
+                                            <td className="py-1">
+                                                <button onClick={() => deleteStudent(selected.id, st.id)} className="text-text-muted hover:text-error transition-colors">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
                                 {selected.students.length === 0 && (
                                     <tr>
                                         <td colSpan={38} className="py-6 text-center text-text-muted">

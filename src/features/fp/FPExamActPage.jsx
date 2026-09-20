@@ -4,11 +4,12 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, FileText, Calculator, RefreshCw, CloudDownload, Link2, Cloud } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, FileText, Calculator, RefreshCw, CloudDownload, Link2, Cloud, AlertTriangle } from 'lucide-react'
 import useFPExamActStore from '../../core/stores/useFPExamActStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
+import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
 import { numberToWordsEs } from '../../utils/numberToWordsEs'
 import {
     syncFPExamActSheet,
@@ -124,6 +125,7 @@ export default function FPExamActPage() {
         }
         syncStudentsFromCourse(selected.id, matchingCourse.students)
         calculateResumen(selected.id)
+        useFPUpdateAlertStore.getState().clearExamAlert(matchingCourse.id, selected.cursoNumero)
         toast.success(`Estudiantes actualizados desde Ficha de Curso (${matchingCourse.students.length} estudiantes)`)
     }
 
@@ -146,8 +148,18 @@ export default function FPExamActPage() {
                 )
                 if (match) {
                     found = true
-                    totalPres += Number(match.totalPres) || 0
-                    totalAus += Number(match.totalAus) || 0
+                    let p = Number(match.totalPres) || 0
+                    let a = Number(match.totalAus) || 0
+                    // Si totalPres y totalAus estaban vacíos o en 0, calcularlos sumando las 'P' y 'A' de match.days
+                    if (p === 0 && a === 0 && match.days) {
+                        Object.values(match.days).forEach((v) => {
+                            const u = (v || '').trim().toUpperCase()
+                            if (u === 'P') p++
+                            else if (u === 'A') a++
+                        })
+                    }
+                    totalPres += p
+                    totalAus += a
                 }
             })
             if (found && totalPres + totalAus > 0) {
@@ -495,6 +507,33 @@ export default function FPExamActPage() {
                         </p>
                     </CardBody>
                 </Card>
+
+                {/* Banner recordatorio si se agregaron alumnos en Ficha de Curso */}
+                {useFPUpdateAlertStore((st) => st.hasExamAlert(selected?.cursoId, selected?.cursoNumero)) && (
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4 animate-fade-in shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-bold text-text-primary">
+                                    Hay alumnos nuevos agregados en Ficha de Curso
+                                </h4>
+                                <p className="text-xs text-text-secondary mt-0.5">
+                                    Presioná el botón <strong>"Actualizar de Ficha de Curso"</strong> para incluir a los nuevos estudiantes en esta acta de examen.
+                                </p>
+                            </div>
+                        </div>
+                        <Button
+                            size="sm"
+                            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0"
+                            icon={RefreshCw}
+                            onClick={handleSyncStudentsFromCourse}
+                        >
+                            Actualizar de Ficha de Curso
+                        </Button>
+                    </div>
+                )}
 
                 {/* Tabla de notas */}
                 <Card>
