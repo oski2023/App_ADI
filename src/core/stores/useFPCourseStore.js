@@ -33,6 +33,7 @@ const emptyStudent = () => ({
     nacionalidad: '',
     domicilio: '',
     localidad: '',
+    edad: '',
     contacto: '',
 })
 

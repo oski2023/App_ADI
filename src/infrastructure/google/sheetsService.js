@@ -4,6 +4,7 @@
 
 import { SHEET_NAMES, isGoogleConfigured } from './googleConfig'
 import { initGoogleAuth } from './googleAuth'
+import { calculateAge, formatDateForInput } from '../../utils/dateUtils'
 
 let spreadsheetId = null
 
@@ -454,7 +455,7 @@ const FP_COURSE_STUDENT_COLUMNS = {
     nacionalidad: 'K',
     domicilio: 'M',
     localidad: 'P',
-    contacto: 'S',
+    edad: 'S', // Columna S (encabezado combinado S7:U8 en la planilla)
 }
 
 // Parsea los datos de una Ficha de Curso desde una matriz de filas
@@ -484,6 +485,19 @@ export function parseFPCourseGrid(rows, sheetTitle = '') {
         Object.entries(FP_COURSE_STUDENT_COLUMNS).forEach(([field, col]) => {
             student[field] = getCellFromGrid(rows, `${col}${r}`)
         })
+
+        // Normalizar fecha de nacimiento para el selector HTML (AAAA-MM-DD)
+        const isoBirth = formatDateForInput(student.fechaNacimiento)
+        if (isoBirth) {
+            student.fechaNacimiento = isoBirth
+        }
+
+        // Si la edad no vino en la celda pero hay fecha de nacimiento, calcularla
+        const calculatedAge = calculateAge(student.fechaNacimiento)
+        if (!student.edad && calculatedAge !== '') {
+            student.edad = String(calculatedAge)
+        }
+
         students.push(student)
     }
 
@@ -571,7 +585,17 @@ export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
         course.students.forEach((s, idx) => {
             const row = FP_COURSE_STUDENT_START_ROW + idx
             pushCell(`A${row}`, idx + 1)
-            Object.entries(FP_COURSE_STUDENT_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, s[field]))
+
+            // Calcular edad automáticamente verificando la columna fecha de nacimiento
+            const calculatedAge = calculateAge(s.fechaNacimiento)
+            const edadValue = calculatedAge !== '' ? String(calculatedAge) : (s.edad ?? '')
+
+            const studentData = {
+                ...s,
+                edad: edadValue,
+            }
+
+            Object.entries(FP_COURSE_STUDENT_COLUMNS).forEach(([field, col]) => pushCell(`${col}${row}`, studentData[field]))
         })
 
         // Limpiar filas sobrantes de alumnos si se eliminaron alumnos

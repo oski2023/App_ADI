@@ -12,6 +12,7 @@ import useSettingsStore from '../../core/stores/useSettingsStore'
 import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, buildFPCourseTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
+import { calculateAge } from '../../utils/dateUtils'
 import toast from 'react-hot-toast'
 
 const DIAS = [
@@ -473,7 +474,7 @@ export default function FPCoursesPage() {
                                     <th className="py-2 pr-2">Nacionalidad</th>
                                     <th className="py-2 pr-2">Domicilio</th>
                                     <th className="py-2 pr-2">Localidad</th>
-                                    <th className="py-2 pr-2">Contacto</th>
+                                    <th className="py-2 pr-2 w-24">Edad</th>
                                     <th className="py-2 w-10"></th>
                                 </tr>
                             </thead>
@@ -485,11 +486,35 @@ export default function FPCoursesPage() {
                                         <td className="py-1.5 pr-2"><Input value={s.documentoNumero} onChange={(e) => updateStudent(selected.id, s.id, { documentoNumero: e.target.value })} /></td>
                                         <td className="py-1.5 pr-2"><Input value={s.sexo} onChange={(e) => updateStudent(selected.id, s.id, { sexo: e.target.value })} /></td>
                                         <td className="py-1.5 pr-2"><Input value={s.apellidosNombres} onChange={(e) => updateStudent(selected.id, s.id, { apellidosNombres: e.target.value })} /></td>
-                                        <td className="py-1.5 pr-2"><Input type="date" value={s.fechaNacimiento} onChange={(e) => updateStudent(selected.id, s.id, { fechaNacimiento: e.target.value })} /></td>
+                                        <td className="py-1.5 pr-2">
+                                            <Input
+                                                type="date"
+                                                value={s.fechaNacimiento || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value
+                                                    const calculatedAge = calculateAge(val)
+                                                    updateStudent(selected.id, s.id, {
+                                                        fechaNacimiento: val,
+                                                        edad: calculatedAge !== '' ? String(calculatedAge) : (val ? '' : s.edad),
+                                                    })
+                                                }}
+                                            />
+                                        </td>
                                         <td className="py-1.5 pr-2"><Input value={s.nacionalidad} onChange={(e) => updateStudent(selected.id, s.id, { nacionalidad: e.target.value })} /></td>
                                         <td className="py-1.5 pr-2"><Input value={s.domicilio} onChange={(e) => updateStudent(selected.id, s.id, { domicilio: e.target.value })} /></td>
                                         <td className="py-1.5 pr-2"><Input value={s.localidad} onChange={(e) => updateStudent(selected.id, s.id, { localidad: e.target.value })} /></td>
-                                        <td className="py-1.5 pr-2"><Input value={s.contacto} onChange={(e) => updateStudent(selected.id, s.id, { contacto: e.target.value })} /></td>
+                                        <td className="py-1.5 pr-2">
+                                            <Input
+                                                type="number"
+                                                min="0"
+                                                max="130"
+                                                placeholder="Edad..."
+                                                value={s.edad !== undefined && s.edad !== '' ? s.edad : calculateAge(s.fechaNacimiento)}
+                                                onChange={(e) => updateStudent(selected.id, s.id, { edad: e.target.value })}
+                                                className="w-20 text-center font-medium"
+                                                title="Calculada automáticamente a partir de la Fecha de Nacimiento"
+                                            />
+                                        </td>
                                         <td className="py-1.5">
                                             <button onClick={() => deleteStudent(selected.id, s.id)} className="text-text-muted hover:text-error transition-colors">
                                                 <Trash2 className="w-4 h-4" />
