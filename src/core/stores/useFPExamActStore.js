@@ -112,23 +112,56 @@ const useFPExamActStore = create(
                 return updatedId
             },
 
-            syncAllFromCloud: (cloudActs) => {
+            // Sincronización completa (Espejo de Google Sheets)
+            // Permite actualizar todas las actas o solo las pertenecientes a un spreadsheet/curso específico,
+            // preservando las actas de otros cursos para evitar borrados accidentales.
+            syncAllFromCloud: (cloudActs, targetSpreadsheetId = null, targetCursoNumero = null) => {
                 const currentActs = get().acts
-                const updatedList = cloudActs.map((cAct) => {
+                const matchedCloudActs = cloudActs.map((cAct) => {
                     const match = currentActs.find((a) => {
-                        if (a.googleSheetTitle && cAct.googleSheetTitle && a.googleSheetTitle === cAct.googleSheetTitle) return true
+                        if (cAct.id && a.id === cAct.id) return true
+                        if (a.googleSheetTitle && cAct.googleSheetTitle && a.googleSheetTitle.trim().toLowerCase() === cAct.googleSheetTitle.trim().toLowerCase()) return true
                         const aCurso = (a.cursoNumero || '').trim().toLowerCase()
                         const dCurso = (cAct.cursoNumero || '').trim().toLowerCase()
                         return aCurso && dCurso && aCurso === dCurso
                     })
                     return {
                         ...emptyAct(),
+                        ...(match || {}),
                         ...cAct,
-                        id: match ? match.id : crypto.randomUUID(),
+                        spreadsheetId: cAct.spreadsheetId || targetSpreadsheetId || match?.spreadsheetId || '',
+                        id: match ? match.id : (cAct.id || crypto.randomUUID()),
                     }
                 })
-                set({ acts: updatedList })
-                return updatedList
+
+                let finalActs = []
+                if (targetSpreadsheetId) {
+                    const actsFromOtherSheets = currentActs.filter(
+                        (a) => a.spreadsheetId && a.spreadsheetId !== targetSpreadsheetId
+                    )
+                    const otherCoursesActs = currentActs.filter(
+                        (a) => !a.spreadsheetId && targetCursoNumero && a.cursoNumero && a.cursoNumero.trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
+                    )
+                    finalActs = [...actsFromOtherSheets, ...otherCoursesActs, ...matchedCloudActs]
+                } else if (targetCursoNumero) {
+                    const otherActs = currentActs.filter(
+                        (a) => (a.cursoNumero || '').trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
+                    )
+                    finalActs = [...otherActs, ...matchedCloudActs]
+                } else {
+                    const incomingCursos = new Set(matchedCloudActs.map((a) => (a.cursoNumero || '').trim().toLowerCase()).filter(Boolean))
+                    const incomingSpreadsheets = new Set(matchedCloudActs.map((a) => a.spreadsheetId).filter(Boolean))
+                    const actsNotCovered = currentActs.filter((a) => {
+                        const aCurso = (a.cursoNumero || '').trim().toLowerCase()
+                        if (a.spreadsheetId && incomingSpreadsheets.has(a.spreadsheetId)) return false
+                        if (aCurso && incomingCursos.has(aCurso)) return false
+                        return true
+                    })
+                    finalActs = [...actsNotCovered, ...matchedCloudActs]
+                }
+
+                set({ acts: finalActs })
+                return finalActs
             },
 
             addStudent: (actId) => set((state) => ({

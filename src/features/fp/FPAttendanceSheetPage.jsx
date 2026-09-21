@@ -63,7 +63,11 @@ export default function FPAttendanceSheetPage() {
         : sheets.filter((s) => (s.cursoId && s.cursoId === activeCourse.id) || (s.cursoNumero && s.cursoNumero === activeCourse.cursoNumero))
 
     const [selectedId, setSelectedId] = useState(null)
-    const selected = sheets.find((s) => s.id === selectedId)
+    const activeTabId = (selectedId && filteredSheets.some((s) => s.id === selectedId))
+        ? selectedId
+        : (filteredSheets[0]?.id || null)
+    const selected = sheets.find((s) => s.id === activeTabId)
+
     const attendanceLink = useFPGoogleLinksStore((s) => s.links.attendanceSheet)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
     const pendingUpdates = useFPUpdateAlertStore((s) => s.pendingUpdates)
@@ -73,6 +77,9 @@ export default function FPAttendanceSheetPage() {
             (selected.cursoNumero && Object.values(pendingUpdates || {}).some((u) => u.attendance && u.cursoNumero && u.cursoNumero.trim().toLowerCase() === selected.cursoNumero.trim().toLowerCase()))
         )
         : false
+
+    const [studentToDelete, setStudentToDelete] = useState(null)
+    const [bajaToDelete, setBajaToDelete] = useState(null)
 
     const [showAddBajaModal, setShowAddBajaModal] = useState(false)
     const [bajaStudentId, setBajaStudentId] = useState('')
@@ -368,21 +375,31 @@ export default function FPAttendanceSheetPage() {
     const handleConfirmDelete = async () => {
         if (!sheetToDelete) return
         const targetId = sheetToDelete.id
-        const targetName = sheetToDelete.especialidad || 'Planilla'
+        const targetName = sheetToDelete.googleSheetTitle || sheetToDelete.informeMes || sheetToDelete.especialidad || 'Planilla'
         const targetTab = sheetToDelete.googleSheetTitle || buildFPAttendanceTabTitle(sheetToDelete)
         const targetCurso = sheetToDelete.cursoNumero
+
+        const courseForSheet = courses.find((c) =>
+            (c.id && c.id === sheetToDelete.cursoId) ||
+            (c.cursoNumero && sheetToDelete.cursoNumero && c.cursoNumero.trim().toLowerCase() === sheetToDelete.cursoNumero.trim().toLowerCase())
+        ) || activeCourse
+        const targetSpreadsheetId = sheetToDelete.spreadsheetId || courseForSheet?.links?.attendanceSheet?.spreadsheetId || attendanceLink?.spreadsheetId
+
         deleteSheet(targetId)
+        if (selectedId === targetId) {
+            setSelectedId(null)
+        }
         setSheetToDelete(null)
 
-        if (attendanceLink) {
-            const remainingSheets = sheets.filter((s) => s.id !== targetId)
+        if (targetSpreadsheetId) {
+            const remainingSheets = sheets.filter((s) => s.id !== targetId && (s.spreadsheetId === targetSpreadsheetId || s.cursoNumero === targetCurso))
             setSyncing(true)
             try {
                 if (remainingSheets.length === 0) {
-                    await clearFPAttendanceSheet(attendanceLink.spreadsheetId, attendanceLink.sheetTitle)
+                    await clearFPAttendanceSheet(targetSpreadsheetId, targetTab)
                     toast.success(`"${targetName}" eliminada y Google Sheets vaciado`)
                 } else {
-                    await deleteFPSpreadsheetTab(attendanceLink.spreadsheetId, targetTab, targetCurso)
+                    await deleteFPSpreadsheetTab(targetSpreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminada`)
                 }
                 saveFPCloudRegistry().catch((err) => console.warn('[FPAttendanceSheetPage] Error guardando registro en Drive:', err))
@@ -421,7 +438,7 @@ export default function FPAttendanceSheetPage() {
                     toast.error('No se encontraron planillas de asistencia en la hoja')
                     return
                 }
-                syncAllFromCloud(allSheets)
+                syncAllFromCloud(allSheets, spreadsheetId, activeCourse?.cursoNumero)
                 toast.success(`Se sincronizaron ${allSheets.length} planilla(s) desde Google Sheets`)
             }
         } catch (error) {
@@ -588,306 +605,11 @@ export default function FPAttendanceSheetPage() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {selected ? (
-                <>
-                    <div className="flex flex-wrap items-center gap-3">
-                    <Button variant="outline" icon={ArrowLeft} onClick={() => setSelectedId(null)}>
-                        Volver
-                    </Button>
-                    <h1 className="text-xl font-bold text-text-primary flex-1">
-                        Asistencia de Alumnos {selected.especialidad ? `— ${selected.especialidad}` : ''}
-                    </h1>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            icon={CloudDownload}
-                            loading={pulling}
-                            disabled={pulling || syncing}
-                            onClick={() => handlePullFromSheets(selected.id)}
-                            title="Recarga los datos de esta planilla desde Google Sheets"
-                        >
-                            Cargar de Sheets
-                        </Button>
-                        <Button icon={RefreshCw} loading={syncing} disabled={syncing || pulling} onClick={() => handleSyncSingle(selected)}>
-                            Sincronizar con Sheets
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Datos generales */}
-                <Card>
-                    <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
-                        <ClipboardCheck className="w-4 h-4 text-primary" />
-                        <h2 className="text-base font-semibold text-text-primary">Datos Generales</h2>
-                    </div>
-                    <CardBody className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <Input label="Centro Nº" value={selected.centroNumero} onChange={(e) => updateSheet(selected.id, { centroNumero: e.target.value })} />
-                            <Input label="Distrito" value={selected.distrito} onChange={(e) => updateSheet(selected.id, { distrito: e.target.value })} />
-                            <Input label="Tipo" value={selected.tipo} onChange={(e) => updateSheet(selected.id, { tipo: e.target.value })} />
-                            <Input label="F.O." value={selected.fo} onChange={(e) => updateSheet(selected.id, { fo: e.target.value })} />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <Input label="Curso Nº" value={selected.cursoNumero} onChange={(e) => updateSheet(selected.id, { cursoNumero: e.target.value })} />
-                            <Input className="md:col-span-2" label="Especialidad" value={selected.especialidad} onChange={(e) => updateSheet(selected.id, { especialidad: e.target.value })} />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Input label="Informe del mes de" value={selected.informeMes} onChange={(e) => updateSheet(selected.id, { informeMes: e.target.value })} />
-                            <Input label="Año" value={selected.informeAnio} onChange={(e) => updateSheet(selected.id, { informeAnio: e.target.value })} />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <Input label="Lugar donde dicta" value={selected.lugarDictado} onChange={(e) => updateSheet(selected.id, { lugarDictado: e.target.value })} />
-                            <Input label="En la calle" value={selected.enLaCalle} onChange={(e) => updateSheet(selected.id, { enLaCalle: e.target.value })} />
-                            <Input label="Localidad" value={selected.localidad} onChange={(e) => updateSheet(selected.id, { localidad: e.target.value })} />
-                        </div>
-
-                        <div>
-                            <p className="block text-sm font-medium text-text-secondary mb-1.5">Horarios</p>
-                            <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-                                {DIAS_SEMANA.map((d) => (
-                                    <Input
-                                        key={d.key}
-                                        label={d.label}
-                                        placeholder="Ej. 18 a 22"
-                                        value={selected.horarios[d.key]}
-                                        onChange={(e) => updateSheetHorario(selected.id, d.key, e.target.value)}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-                    </CardBody>
-                </Card>
-
-                {/* Banner recordatorio si se agregaron alumnos en Ficha de Curso */}
-                {hasAttendanceAlertForSelected && (
-                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4 animate-fade-in shadow-sm">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
-                                <AlertTriangle className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <h4 className="text-sm font-bold text-text-primary">
-                                    Hay alumnos nuevos agregados en Ficha de Curso
-                                </h4>
-                                <p className="text-xs text-text-secondary mt-0.5">
-                                    Presioná el botón <strong>"Actualizar de Ficha de Curso"</strong> para sincronizar la nómina en esta planilla mensual.
-                                </p>
-                            </div>
-                        </div>
-                        <Button
-                            size="sm"
-                            className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0"
-                            icon={RefreshCw}
-                            onClick={handleSyncStudentsFromCourse}
-                        >
-                            Actualizar de Ficha de Curso
-                        </Button>
-                    </div>
-                )}
-
-                {/* Grilla de asistencia */}
-                <Card>
-                    <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
-                        <h2 className="text-base font-semibold text-text-primary">Grilla de Asistencia (P = Presente, A = Ausente)</h2>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleSyncStudentsFromCourse}
-                                title="Actualiza la lista de alumnos desde la Ficha de Curso correspondiente"
-                            >
-                                Actualizar de Ficha de Curso
-                            </Button>
-                            <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
-                                Agregar Alumno
-                            </Button>
-                        </div>
-                    </div>
-                    <CardBody className="overflow-x-auto">
-                        <table className="text-sm border-collapse">
-                            <thead>
-                                <tr className="text-left text-text-secondary border-b border-border-light">
-                                    <th className="py-2 pr-2 w-10">Nº</th>
-                                    <th className="py-2 pr-2 w-16">Sexo</th>
-                                    <th className="py-2 pr-2 min-w-[180px]">Apellidos y Nombres</th>
-                                    {DIAS_MES.map((d) => (
-                                        <th key={d} className="py-2 px-0.5 w-8 text-center">{d}</th>
-                                    ))}
-                                    <th className="py-2 px-1 w-14 text-center">Aus.</th>
-                                    <th className="py-2 px-1 w-14 text-center">Pres.</th>
-                                    <th className="py-2 pl-2 min-w-[200px]">Temas tratados desde el último informe</th>
-                                    <th className="py-2 w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {selected.students.map((st, idx) => {
-                                    const ausCount = DIAS_MES.filter((d) => (st.days?.[d] || '').trim().toUpperCase() === 'A').length
-                                    const presCount = DIAS_MES.filter((d) => (st.days?.[d] || '').trim().toUpperCase() === 'P').length
-                                    const valAus = (st.totalAus !== '' && st.totalAus !== undefined && Number(st.totalAus) > 0) ? st.totalAus : String(ausCount)
-                                    const valPres = (st.totalPres !== '' && st.totalPres !== undefined && Number(st.totalPres) > 0) ? st.totalPres : String(presCount)
-
-                                    return (
-                                        <tr key={st.id} className="border-b border-border-light/50">
-                                            <td className="py-1 pr-2 text-text-muted">{idx + 1}</td>
-                                            <td className="py-1 pr-2">
-                                                <input
-                                                    className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary"
-                                                    value={st.sexo}
-                                                    maxLength={1}
-                                                    onChange={(e) => updateStudent(selected.id, st.id, { sexo: e.target.value.toUpperCase() })}
-                                                />
-                                            </td>
-                                            <td className="py-1 pr-2">
-                                                <input
-                                                    className="w-full min-w-[170px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
-                                                    value={st.apellidosNombres}
-                                                    onChange={(e) => updateStudent(selected.id, st.id, { apellidosNombres: e.target.value })}
-                                                />
-                                            </td>
-                                            {DIAS_MES.map((d) => (
-                                                <td key={d} className="py-1 px-0.5">
-                                                    <input
-                                                        className="w-7 h-7 text-center rounded border border-border bg-bg-card text-text-primary text-xs font-semibold"
-                                                        value={st.days[d]}
-                                                        maxLength={1}
-                                                        onChange={(e) => updateStudentDay(selected.id, st.id, d, e.target.value.toUpperCase())}
-                                                    />
-                                                </td>
-                                            ))}
-                                            <td className="py-1 px-1">
-                                                <input
-                                                    className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary font-bold text-xs"
-                                                    value={valAus}
-                                                    onChange={(e) => updateStudent(selected.id, st.id, { totalAus: e.target.value })}
-                                                    title="Total Ausentes (Suma 1 por cada 'A')"
-                                                />
-                                            </td>
-                                            <td className="py-1 px-1">
-                                                <input
-                                                    className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary font-bold text-xs"
-                                                    value={valPres}
-                                                    onChange={(e) => updateStudent(selected.id, st.id, { totalPres: e.target.value })}
-                                                    title="Total Presentes (Suma 1 por cada 'P')"
-                                                />
-                                            </td>
-                                            <td className="py-1 pl-2">
-                                                <input
-                                                    className="w-full min-w-[190px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
-                                                    value={st.temasTratados}
-                                                    onChange={(e) => updateStudent(selected.id, st.id, { temasTratados: e.target.value })}
-                                                />
-                                            </td>
-                                            <td className="py-1">
-                                                <button onClick={() => deleteStudent(selected.id, st.id)} className="text-text-muted hover:text-error transition-colors">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    )
-                                })}
-                                {selected.students.length === 0 && (
-                                    <tr>
-                                        <td colSpan={38} className="py-6 text-center text-text-muted">
-                                            No hay alumnos cargados todavía.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </CardBody>
-                </Card>
-
-                {/* Bajas de alumnos */}
-                <Card>
-                    <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
-                        <div>
-                            <h2 className="text-base font-semibold text-text-primary">Bajas de Alumnos/as</h2>
-                            <p className="text-xs text-text-muted mt-0.5">Al hacer click podés seleccionar un alumno cargado en el curso</p>
-                        </div>
-                        <Button icon={Plus} size="sm" onClick={handleOpenAddBajaModal}>
-                            Agregar Baja
-                        </Button>
-                    </div>
-                    <CardBody className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-left text-text-secondary border-b border-border-light">
-                                    <th className="py-2 pr-2 w-24">Sexo</th>
-                                    <th className="py-2 pr-2">Apellidos y Nombres</th>
-                                    <th className="py-2 w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {selected.bajas.map((b) => (
-                                    <tr key={b.id} className="border-b border-border-light/50">
-                                        <td className="py-1.5 pr-2"><Input value={b.sexo} onChange={(e) => updateBaja(selected.id, b.id, { sexo: e.target.value })} /></td>
-                                        <td className="py-1.5 pr-2"><Input value={b.apellidosNombres} onChange={(e) => updateBaja(selected.id, b.id, { apellidosNombres: e.target.value })} /></td>
-                                        <td className="py-1.5">
-                                            <button onClick={() => deleteBaja(selected.id, b.id)} className="text-text-muted hover:text-error transition-colors">
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {selected.bajas.length === 0 && (
-                                    <tr>
-                                        <td colSpan={3} className="py-4 text-center text-text-muted">Sin bajas registradas.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </CardBody>
-                </Card>
-
-                {/* Movimiento de Alumnos */}
-                <Card>
-                    <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                            <h2 className="text-base font-semibold text-text-primary">Movimiento de Alumnos</h2>
-                            <p className="text-xs text-text-muted mt-0.5">
-                                Calculado automáticamente según asistencia y bajas (Altas se ingresa manualmente por teclado)
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            icon={RefreshCw}
-                            onClick={() => {
-                                calculateMovimiento(selected.id)
-                                toast.success('Movimiento de alumnos recalculado')
-                            }}
-                        >
-                            Recalcular
-                        </Button>
-                    </div>
-                    <CardBody className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {MOVIMIENTO_FIELDS.map((f) => (
-                            <Input
-                                key={f.key}
-                                label={f.label}
-                                value={selected.movimiento[f.key]}
-                                onChange={(e) => updateMovimiento(selected.id, f.key, e.target.value)}
-                            />
-                        ))}
-                    </CardBody>
-                </Card>
-
-                {/* Firmas */}
-                <Card>
-                    <CardBody className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <Input label="Firma" value={selected.firma} onChange={(e) => updateSheet(selected.id, { firma: e.target.value })} />
-                        <Input label="Instructor" value={selected.instructor} onChange={(e) => updateSheet(selected.id, { instructor: e.target.value })} />
-                        <Input label="Entregó" value={selected.entrego} onChange={(e) => updateSheet(selected.id, { entrego: e.target.value })} />
-                        <Input label="Recibió" value={selected.recibio} onChange={(e) => updateSheet(selected.id, { recibio: e.target.value })} />
-                    </CardBody>
-                </Card>
-                </>
-            ) : (
-                <>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+            {/* Cabecera Principal */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-text-primary">Asistencia de Alumnos</h1>
-                    <p className="text-sm text-text-secondary mt-1">Formación Profesional</p>
+                    <p className="text-sm text-text-secondary mt-1">Formación Profesional — Registro Mensual de Asistencia</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <Button
@@ -895,7 +617,7 @@ export default function FPAttendanceSheetPage() {
                         icon={CloudDownload}
                         loading={pulling}
                         disabled={pulling || syncing}
-                        onClick={() => handlePullFromSheets(null)}
+                        onClick={() => handlePullFromSheets(selected?.id || null)}
                         title="Descarga la planilla de asistencia desde Google Sheets hacia este dispositivo"
                     >
                         Traer de Google Sheets
@@ -904,18 +626,18 @@ export default function FPAttendanceSheetPage() {
                         icon={RefreshCw}
                         loading={syncing}
                         disabled={syncing || pulling}
-                        onClick={handleSyncGeneral}
+                        onClick={selected ? () => handleSyncSingle(selected) : handleSyncGeneral}
                         title="Sincroniza los datos con Google Sheets"
                     >
-                        Sincronizar con Sheets
+                        {selected ? 'Sincronizar Pestaña' : 'Sincronizar con Sheets'}
                     </Button>
                     <Button icon={Plus} onClick={handleAddNewSheet}>
-                        Nuevo Informe Mensual
+                        Nueva Pestaña / Mes
                     </Button>
                 </div>
             </div>
 
-            {/* Selector de Curso */}
+            {/* Selector de Curso (Siempre visible) */}
             <div className="bg-bg-surface border border-border-light rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
                 <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-text-primary whitespace-nowrap">📚 Número de Curso:</span>
@@ -923,14 +645,17 @@ export default function FPAttendanceSheetPage() {
                         <select
                             className="bg-bg-main border border-border-light rounded-lg px-3 py-1.5 text-sm font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                             value={activeCourse ? activeCourse.id : ''}
-                            onChange={(e) => setSelectedCourseId(e.target.value)}
+                            onChange={(e) => {
+                                setSelectedCourseId(e.target.value)
+                                setSelectedId(null)
+                            }}
                         >
                             {courses.map((c) => (
                                 <option key={c.id} value={c.id}>
                                     Curso Nº {c.cursoNumero || '—'} · {c.especialidad || 'Sin especialidad'}
                                 </option>
                             ))}
-                            {courses.length > 1 && <option value="ALL">Mostrar todos los cursos</option>}
+                            {courses.length > 1 && <option value="ALL">Mostrar todos los cursos (Vista resumen)</option>}
                         </select>
                     ) : (
                         <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">
@@ -942,66 +667,500 @@ export default function FPAttendanceSheetPage() {
                     <div className="text-xs text-text-secondary flex flex-wrap items-center gap-x-4 gap-y-1">
                         <span><strong>C.F.P. Nº:</strong> {activeCourse.cfpNumero || '—'}</span>
                         <span><strong>Distrito:</strong> {activeCourse.distrito || '—'}</span>
-                        <span><strong>Alumnos:</strong> {activeCourse.students?.length || 0}</span>
+                        <span><strong>Alumnos en Ficha:</strong> {activeCourse.students?.length || 0}</span>
+                        {activeCourse.folderName && (
+                            <span className="text-primary font-medium">📁 {activeCourse.folderName}</span>
+                        )}
                     </div>
                 )}
             </div>
 
-            {filteredSheets.length === 0 && (
-                <Card>
-                    <CardBody className="text-center py-10 text-text-muted">
-                        {courses.length === 0
-                            ? 'Para comenzar a registrar la asistencia mensual, primero debés cargar un curso en la pestaña "Ficha de Curso".'
-                            : `Todavía no hay informes mensuales para el curso seleccionado (Curso Nº ${activeCourse?.cursoNumero || '—'}). Hacé clic en "Nuevo Informe Mensual" para crear el primero.`}
-                    </CardBody>
-                </Card>
+            {/* Vista Resumen cuando se selecciona "Mostrar todos los cursos" */}
+            {selectedCourseId === 'ALL' && (
+                <div className="space-y-4">
+                    <h2 className="text-base font-semibold text-text-primary">Todas las Planillas de Asistencia</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredSheets.map((s) => (
+                            <Card
+                                key={s.id}
+                                className="cursor-pointer hover:shadow-md transition-shadow"
+                                onClick={() => {
+                                    if (s.cursoId) setSelectedCourseId(s.cursoId)
+                                    setSelectedId(s.id)
+                                }}
+                            >
+                                <CardBody>
+                                    <div className="flex items-start justify-between">
+                                        <div>
+                                            <p className="font-semibold text-text-primary">{s.especialidad || 'Sin especialidad'}</p>
+                                            <p className="text-xs text-text-secondary mt-0.5">Curso Nº {s.cursoNumero || '—'} · {s.informeMes || 'Sin mes'} {s.informeAnio}</p>
+                                            <p className="text-xs text-text-muted mt-1">{s.students?.length || 0} alumnos</p>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    handleSyncSingle(s)
+                                                }}
+                                                className="p-1.5 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg-hover"
+                                                title="Sincronizar esta planilla con Google Sheets"
+                                            >
+                                                <RefreshCw className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => handleDeleteClick(e, s)}
+                                                className="p-1.5 text-text-muted hover:text-error transition-colors rounded-lg hover:bg-bg-hover"
+                                                title="Eliminar planilla"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </CardBody>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredSheets.map((s) => (
-                    <Card key={s.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedId(s.id)}>
-                        <CardBody>
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="font-semibold text-text-primary">{s.especialidad || 'Sin especialidad'}</p>
-                                    <p className="text-xs text-text-secondary mt-0.5">Curso Nº {s.cursoNumero || '—'} · {s.informeMes || 'Sin mes'} {s.informeAnio}</p>
-                                    <p className="text-xs text-text-muted mt-1">{s.students.length} alumno{s.students.length !== 1 ? 's' : ''}</p>
+            {/* Vista por Curso con Pestañas y Espejo Completo */}
+            {selectedCourseId !== 'ALL' && (
+                <>
+                    {filteredSheets.length === 0 ? (
+                        <Card>
+                            <CardBody className="text-center py-12 space-y-4">
+                                <p className="text-text-secondary">
+                                    {courses.length === 0
+                                        ? 'Para comenzar a registrar la asistencia mensual, primero debés cargar un curso en la pestaña "Ficha de Curso".'
+                                        : `Todavía no hay informes mensuales para el Curso Nº ${activeCourse?.cursoNumero || '—'}.`}
+                                </p>
+                                {activeCourse && (
+                                    <div className="flex items-center justify-center gap-3 pt-2">
+                                        <Button icon={Plus} onClick={handleAddNewSheet}>
+                                            Crear Primera Pestaña (Mes)
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            icon={CloudDownload}
+                                            loading={pulling}
+                                            disabled={pulling}
+                                            onClick={() => handlePullFromSheets(null)}
+                                        >
+                                            Traer de Google Sheets
+                                        </Button>
+                                    </div>
+                                )}
+                            </CardBody>
+                        </Card>
+                    ) : selected ? (
+                        <div className="space-y-5">
+                            {/* Barra de Navegación de Pestañas (Estilo Google Sheets) */}
+                            <div className="bg-bg-surface border border-border-light rounded-xl p-2 shadow-sm">
+                                <div className="flex items-center justify-between gap-2 mb-2 px-2 pt-1">
+                                    <span className="text-xs font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
+                                        📑 Pestañas de Asistencia (Meses)
+                                    </span>
+                                    <span className="text-xs text-text-muted">
+                                        Hacé clic para navegar entre las distintas pestañas
+                                    </span>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleSyncSingle(s)
-                                        }}
-                                        className="p-1.5 text-text-muted hover:text-primary transition-colors rounded-lg hover:bg-bg-hover"
-                                        title="Sincronizar esta planilla con Google Sheets"
+                                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                                    {filteredSheets.map((s, idx) => {
+                                        const isActive = s.id === activeTabId
+                                        const tabTitle = s.googleSheetTitle || (s.informeMes ? `${s.informeMes} ${s.informeAnio || ''}`.trim() : `Pestaña ${idx + 1}`)
+                                        return (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => setSelectedId(s.id)}
+                                                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all whitespace-nowrap border ${
+                                                    isActive
+                                                        ? 'bg-primary text-white border-primary shadow-sm font-semibold'
+                                                        : 'bg-bg-main text-text-secondary hover:text-text-primary hover:bg-bg-hover border-border-light'
+                                                }`}
+                                            >
+                                                <ClipboardCheck className={`w-4 h-4 ${isActive ? 'text-white' : 'text-text-muted'}`} />
+                                                <span>{tabTitle}</span>
+                                                <span className={`text-[11px] px-1.5 py-0.2 rounded-full ${
+                                                    isActive ? 'bg-white/20 text-white font-bold' : 'bg-border-light text-text-muted'
+                                                }`}>
+                                                    {s.students?.length || 0}
+                                                </span>
+                                            </button>
+                                        )
+                                    })}
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        icon={Plus}
+                                        onClick={handleAddNewSheet}
+                                        className="whitespace-nowrap shrink-0 text-xs ml-1"
+                                        title="Crear nueva pestaña / mes para este curso"
                                     >
-                                        <RefreshCw className="w-4 h-4" />
-                                    </button>
+                                        Nueva Pestaña
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Barra de Acciones de la Pestaña Activa */}
+                            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-bg-surface border border-border-light rounded-xl shadow-sm">
+                                <div>
+                                    <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
+                                        <span>Planilla: {selected.googleSheetTitle || (selected.informeMes ? `${selected.informeMes} ${selected.informeAnio || ''}`.trim() : 'Sin mes')}</span>
+                                        <span className="text-xs font-normal text-text-secondary">· Curso Nº {selected.cursoNumero || activeCourse?.cursoNumero || '—'} ({selected.especialidad || 'Sin especialidad'})</span>
+                                    </h2>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        icon={CloudDownload}
+                                        loading={pulling}
+                                        disabled={pulling || syncing}
+                                        onClick={() => handlePullFromSheets(selected.id)}
+                                        title="Recarga los datos de esta pestaña desde Google Sheets"
+                                    >
+                                        Cargar de Sheets
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        icon={RefreshCw}
+                                        loading={syncing}
+                                        disabled={syncing || pulling}
+                                        onClick={() => handleSyncSingle(selected)}
+                                        title="Sincroniza esta pestaña con Google Sheets"
+                                    >
+                                        Sincronizar Pestaña
+                                    </Button>
                                     <button
-                                        onClick={(e) => handleDeleteClick(e, s)}
-                                        className="p-1.5 text-text-muted hover:text-error transition-colors rounded-lg hover:bg-bg-hover"
-                                        title="Eliminar planilla"
+                                        onClick={(e) => handleDeleteClick(e, selected)}
+                                        className="p-2 text-text-muted hover:text-error transition-colors rounded-lg hover:bg-bg-hover"
+                                        title="Eliminar esta pestaña / informe mensual"
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
-                        </CardBody>
-                    </Card>
-                ))}
-            </div>
-            </>
-        )}
 
-            {/* Modal de confirmación al eliminar */}
+                            {/* Datos generales */}
+                            <Card>
+                                <div className="px-5 py-4 border-b border-border-light flex items-center gap-2">
+                                    <ClipboardCheck className="w-4 h-4 text-primary" />
+                                    <h2 className="text-base font-semibold text-text-primary">Datos Generales</h2>
+                                </div>
+                                <CardBody className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <Input label="Centro Nº" value={selected.centroNumero} onChange={(e) => updateSheet(selected.id, { centroNumero: e.target.value })} />
+                                        <Input label="Distrito" value={selected.distrito} onChange={(e) => updateSheet(selected.id, { distrito: e.target.value })} />
+                                        <Input label="Tipo" value={selected.tipo} onChange={(e) => updateSheet(selected.id, { tipo: e.target.value })} />
+                                        <Input label="F.O." value={selected.fo} onChange={(e) => updateSheet(selected.id, { fo: e.target.value })} />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <Input label="Curso Nº" value={selected.cursoNumero} onChange={(e) => updateSheet(selected.id, { cursoNumero: e.target.value })} />
+                                        <Input className="md:col-span-2" label="Especialidad" value={selected.especialidad} onChange={(e) => updateSheet(selected.id, { especialidad: e.target.value })} />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <Input label="Informe del mes de" value={selected.informeMes} onChange={(e) => updateSheet(selected.id, { informeMes: e.target.value })} />
+                                        <Input label="Año" value={selected.informeAnio} onChange={(e) => updateSheet(selected.id, { informeAnio: e.target.value })} />
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <Input label="Lugar donde dicta" value={selected.lugarDictado} onChange={(e) => updateSheet(selected.id, { lugarDictado: e.target.value })} />
+                                        <Input label="En la calle" value={selected.enLaCalle} onChange={(e) => updateSheet(selected.id, { enLaCalle: e.target.value })} />
+                                        <Input label="Localidad" value={selected.localidad} onChange={(e) => updateSheet(selected.id, { localidad: e.target.value })} />
+                                    </div>
+
+                                    <div>
+                                        <p className="block text-sm font-medium text-text-secondary mb-1.5">Horarios</p>
+                                        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                                            {DIAS_SEMANA.map((d) => (
+                                                <Input
+                                                    key={d.key}
+                                                    label={d.label}
+                                                    placeholder="Ej. 18 a 22"
+                                                    value={selected.horarios?.[d.key] || ''}
+                                                    onChange={(e) => updateSheetHorario(selected.id, d.key, e.target.value)}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+                                </CardBody>
+                            </Card>
+
+                            {/* Banner recordatorio si se agregaron alumnos en Ficha de Curso */}
+                            {hasAttendanceAlertForSelected && (
+                                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4 animate-fade-in shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">
+                                            <AlertTriangle className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-text-primary">
+                                                Hay alumnos nuevos agregados en Ficha de Curso
+                                            </h4>
+                                            <p className="text-xs text-text-secondary mt-0.5">
+                                                Presioná el botón <strong>"Actualizar de Ficha de Curso"</strong> para sincronizar la nómina en esta planilla mensual.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        className="bg-amber-600 hover:bg-amber-700 text-white font-semibold shrink-0"
+                                        icon={RefreshCw}
+                                        onClick={handleSyncStudentsFromCourse}
+                                    >
+                                        Actualizar de Ficha de Curso
+                                    </Button>
+                                </div>
+                            )}
+
+                            {/* Grilla de asistencia (Espejo completo) */}
+                            <Card>
+                                <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
+                                    <h2 className="text-base font-semibold text-text-primary">Grilla de Asistencia (P = Presente, A = Ausente)</h2>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={handleSyncStudentsFromCourse}
+                                            title="Actualiza la lista de alumnos desde la Ficha de Curso correspondiente"
+                                        >
+                                            Actualizar de Ficha de Curso
+                                        </Button>
+                                        <Button icon={Plus} size="sm" onClick={() => addStudent(selected.id)}>
+                                            Agregar Alumno
+                                        </Button>
+                                    </div>
+                                </div>
+                                <CardBody className="overflow-x-auto">
+                                    <table className="text-sm border-collapse">
+                                        <thead>
+                                            <tr className="text-left text-text-secondary border-b border-border-light">
+                                                <th className="py-2 pr-2 w-10">Nº</th>
+                                                <th className="py-2 pr-2 w-16">Sexo</th>
+                                                <th className="py-2 pr-2 min-w-[180px]">Apellidos y Nombres</th>
+                                                {DIAS_MES.map((d) => (
+                                                    <th key={d} className="py-2 px-0.5 w-8 text-center">{d}</th>
+                                                ))}
+                                                <th className="py-2 px-1 w-14 text-center">Aus.</th>
+                                                <th className="py-2 px-1 w-14 text-center">Pres.</th>
+                                                <th className="py-2 pl-2 min-w-[200px]">Temas tratados desde el último informe</th>
+                                                <th className="py-2 w-10"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selected.students.map((st, idx) => {
+                                                const ausCount = DIAS_MES.filter((d) => (st.days?.[d] || '').trim().toUpperCase() === 'A').length
+                                                const presCount = DIAS_MES.filter((d) => (st.days?.[d] || '').trim().toUpperCase() === 'P').length
+                                                const valAus = (st.totalAus !== '' && st.totalAus !== undefined && Number(st.totalAus) > 0) ? st.totalAus : String(ausCount)
+                                                const valPres = (st.totalPres !== '' && st.totalPres !== undefined && Number(st.totalPres) > 0) ? st.totalPres : String(presCount)
+
+                                                return (
+                                                    <tr key={st.id} className="border-b border-border-light/50">
+                                                        <td className="py-1 pr-2 text-text-muted">{idx + 1}</td>
+                                                        <td className="py-1 pr-2">
+                                                            <input
+                                                                className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary"
+                                                                value={st.sexo}
+                                                                maxLength={1}
+                                                                onChange={(e) => updateStudent(selected.id, st.id, { sexo: e.target.value.toUpperCase() })}
+                                                            />
+                                                        </td>
+                                                        <td className="py-1 pr-2">
+                                                            <input
+                                                                className="w-full min-w-[170px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
+                                                                value={st.apellidosNombres}
+                                                                onChange={(e) => updateStudent(selected.id, st.id, { apellidosNombres: e.target.value })}
+                                                            />
+                                                        </td>
+                                                        {DIAS_MES.map((d) => (
+                                                            <td key={d} className="py-1 px-0.5">
+                                                                <input
+                                                                    className="w-7 h-7 text-center rounded border border-border bg-bg-card text-text-primary text-xs font-semibold"
+                                                                    value={st.days[d]}
+                                                                    maxLength={1}
+                                                                    onChange={(e) => updateStudentDay(selected.id, st.id, d, e.target.value.toUpperCase())}
+                                                                />
+                                                            </td>
+                                                        ))}
+                                                        <td className="py-1 px-1">
+                                                            <input
+                                                                className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary font-bold text-xs"
+                                                                value={valAus}
+                                                                onChange={(e) => updateStudent(selected.id, st.id, { totalAus: e.target.value })}
+                                                                title="Total Ausentes (Suma 1 por cada 'A')"
+                                                            />
+                                                        </td>
+                                                        <td className="py-1 px-1">
+                                                            <input
+                                                                className="w-12 px-1 py-1 rounded border border-border text-center bg-bg-card text-text-primary font-bold text-xs"
+                                                                value={valPres}
+                                                                onChange={(e) => updateStudent(selected.id, st.id, { totalPres: e.target.value })}
+                                                                title="Total Presentes (Suma 1 por cada 'P')"
+                                                            />
+                                                        </td>
+                                                        <td className="py-1 pl-2">
+                                                            <input
+                                                                className="w-full min-w-[190px] px-2 py-1 rounded border border-border bg-bg-card text-text-primary"
+                                                                value={st.temasTratados}
+                                                                onChange={(e) => updateStudent(selected.id, st.id, { temasTratados: e.target.value })}
+                                                            />
+                                                        </td>
+                                                        <td className="py-1">
+                                                            <button
+                                                                onClick={() => setStudentToDelete(st)}
+                                                                className="text-text-muted hover:text-error transition-colors p-1 rounded hover:bg-bg-hover"
+                                                                title="Eliminar alumno de la asistencia"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                            {selected.students.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={38} className="py-6 text-center text-text-muted">
+                                                        No hay alumnos cargados todavía.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </CardBody>
+                            </Card>
+
+                            {/* Bajas de alumnos */}
+                            <Card>
+                                <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-base font-semibold text-text-primary">Bajas de Alumnos/as</h2>
+                                        <p className="text-xs text-text-muted mt-0.5">Al hacer click podés seleccionar un alumno cargado en el curso</p>
+                                    </div>
+                                    <Button icon={Plus} size="sm" onClick={handleOpenAddBajaModal}>
+                                        Agregar Baja
+                                    </Button>
+                                </div>
+                                <CardBody className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-left text-text-secondary border-b border-border-light">
+                                                <th className="py-2 pr-2 w-24">Sexo</th>
+                                                <th className="py-2 pr-2">Apellidos y Nombres</th>
+                                                <th className="py-2 w-10"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selected.bajas.map((b) => (
+                                                <tr key={b.id} className="border-b border-border-light/50">
+                                                    <td className="py-1.5 pr-2"><Input value={b.sexo} onChange={(e) => updateBaja(selected.id, b.id, { sexo: e.target.value })} /></td>
+                                                    <td className="py-1.5 pr-2"><Input value={b.apellidosNombres} onChange={(e) => updateBaja(selected.id, b.id, { apellidosNombres: e.target.value })} /></td>
+                                                    <td className="py-1.5">
+                                                        <button
+                                                            onClick={() => setBajaToDelete(b)}
+                                                            className="text-text-muted hover:text-error transition-colors p-1 rounded hover:bg-bg-hover"
+                                                            title="Eliminar registro de baja"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {selected.bajas.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={3} className="py-4 text-center text-text-muted">Sin bajas registradas.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </CardBody>
+                            </Card>
+
+                            {/* Movimiento de Alumnos */}
+                            <Card>
+                                <div className="px-5 py-4 border-b border-border-light flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <h2 className="text-base font-semibold text-text-primary">Movimiento de Alumnos</h2>
+                                        <p className="text-xs text-text-muted mt-0.5">
+                                            Calculado automáticamente según asistencia y bajas (Altas se ingresa manualmente por teclado)
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        icon={RefreshCw}
+                                        onClick={() => {
+                                            calculateMovimiento(selected.id)
+                                            toast.success('Movimiento de alumnos recalculado')
+                                        }}
+                                    >
+                                        Recalcular
+                                    </Button>
+                                </div>
+                                <CardBody className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    {MOVIMIENTO_FIELDS.map((f) => (
+                                        <Input
+                                            key={f.key}
+                                            label={f.label}
+                                            value={selected.movimiento?.[f.key] || ''}
+                                            onChange={(e) => updateMovimiento(selected.id, f.key, e.target.value)}
+                                        />
+                                    ))}
+                                </CardBody>
+                            </Card>
+
+                            {/* Firmas */}
+                            <Card>
+                                <CardBody className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <Input label="Firma" value={selected.firma} onChange={(e) => updateSheet(selected.id, { firma: e.target.value })} />
+                                    <Input label="Instructor" value={selected.instructor} onChange={(e) => updateSheet(selected.id, { instructor: e.target.value })} />
+                                    <Input label="Entregó" value={selected.entrego} onChange={(e) => updateSheet(selected.id, { entrego: e.target.value })} />
+                                    <Input label="Recibió" value={selected.recibio} onChange={(e) => updateSheet(selected.id, { recibio: e.target.value })} />
+                                </CardBody>
+                            </Card>
+                        </div>
+                    ) : null}
+                </>
+            )}
+
+            {/* Modal de confirmación al eliminar pestaña / informe mensual */}
             <ConfirmModal
                 isOpen={!!sheetToDelete}
                 onClose={() => setSheetToDelete(null)}
                 onConfirm={handleConfirmDelete}
-                title="¿Eliminar informe mensual?"
-                description={`¿Estás seguro de que querés eliminar "${sheetToDelete?.especialidad || 'esta planilla'}" (Curso Nº ${sheetToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
-                confirmLabel="Eliminar y Sincronizar"
+                title="¿Desea borrar realmente esta pestaña / informe mensual?"
+                description={`¿Está seguro de que desea eliminar "${sheetToDelete?.googleSheetTitle || sheetToDelete?.informeMes || sheetToDelete?.especialidad || 'esta planilla'}" (Curso Nº ${sheetToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
+                confirmLabel="Sí, eliminar y sincronizar"
+            />
+
+            {/* Modal de confirmación al eliminar alumno de la asistencia */}
+            <ConfirmModal
+                isOpen={!!studentToDelete}
+                onClose={() => setStudentToDelete(null)}
+                onConfirm={() => {
+                    if (studentToDelete && selected) {
+                        deleteStudent(selected.id, studentToDelete.id)
+                        toast.success(`Alumno/a "${studentToDelete.apellidosNombres || 'seleccionado'}" eliminado/a de la asistencia`)
+                        setStudentToDelete(null)
+                    }
+                }}
+                title="¿Desea borrar realmente este alumno/a de la asistencia?"
+                description={`¿Está seguro de que desea eliminar a "${studentToDelete?.apellidosNombres || 'este alumno'}" de esta planilla de asistencia? Esta acción no se puede deshacer.`}
+                confirmLabel="Sí, borrar alumno"
+            />
+
+            {/* Modal de confirmación al eliminar baja */}
+            <ConfirmModal
+                isOpen={!!bajaToDelete}
+                onClose={() => setBajaToDelete(null)}
+                onConfirm={() => {
+                    if (bajaToDelete && selected) {
+                        deleteBaja(selected.id, bajaToDelete.id)
+                        toast.success(`Baja de "${bajaToDelete.apellidosNombres || 'alumno'}" eliminada`)
+                        setBajaToDelete(null)
+                    }
+                }}
+                title="¿Desea borrar realmente esta baja?"
+                description={`¿Está seguro de que desea eliminar la baja de "${bajaToDelete?.apellidosNombres || 'este alumno'}"?`}
+                confirmLabel="Sí, borrar baja"
             />
 
             {/* Modal para elegir cuál planilla sincronizar si hay varias */}

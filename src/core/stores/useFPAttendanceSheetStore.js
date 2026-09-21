@@ -169,26 +169,64 @@ const useFPAttendanceSheetStore = create(
             },
 
             // Sincronización completa (Espejo de Google Sheets):
-            // Reemplaza la lista local con todas las planillas leídas de la nube.
-            // Preserva los IDs locales de los cursos que coincidan, y descarta los eliminados de la nube.
-            syncAllFromCloud: (cloudSheets) => {
+            // Permite actualizar todas las planillas o solo las pertenecientes a un spreadsheet/curso específico,
+            // preservando las planillas de otros cursos para evitar borrados accidentales.
+            syncAllFromCloud: (cloudSheets, targetSpreadsheetId = null, targetCursoNumero = null) => {
                 const currentSheets = get().sheets
-                const updatedList = cloudSheets.map((cSheet) => {
+                const matchedCloudSheets = cloudSheets.map((cSheet) => {
                     const match = currentSheets.find((s) => {
-                        if (s.googleSheetTitle && cSheet.googleSheetTitle && s.googleSheetTitle === cSheet.googleSheetTitle) return true
+                        if (cSheet.id && s.id === cSheet.id) return true
+                        if (s.googleSheetTitle && cSheet.googleSheetTitle && s.googleSheetTitle.trim().toLowerCase() === cSheet.googleSheetTitle.trim().toLowerCase()) {
+                            const sCurso = (s.cursoNumero || '').trim().toLowerCase()
+                            const dCurso = (cSheet.cursoNumero || '').trim().toLowerCase()
+                            if (!sCurso || !dCurso || sCurso === dCurso) return true
+                        }
                         const sCurso = (s.cursoNumero || '').trim().toLowerCase()
                         const dCurso = (cSheet.cursoNumero || '').trim().toLowerCase()
-                        if (sCurso && dCurso && sCurso === dCurso) return true
+                        const sMes = (s.informeMes || '').trim().toLowerCase()
+                        const dMes = (cSheet.informeMes || '').trim().toLowerCase()
+                        if (sCurso && dCurso && sCurso === dCurso) {
+                            if (sMes && dMes && sMes === dMes) return true
+                        }
                         return false
                     })
                     return {
                         ...emptySheet(),
+                        ...(match || {}),
                         ...cSheet,
-                        id: match ? match.id : crypto.randomUUID(),
+                        spreadsheetId: cSheet.spreadsheetId || targetSpreadsheetId || match?.spreadsheetId || '',
+                        id: match ? match.id : (cSheet.id || crypto.randomUUID()),
                     }
                 })
-                set({ sheets: updatedList })
-                return updatedList
+
+                let finalSheets = []
+                if (targetSpreadsheetId) {
+                    const sheetsFromOtherSheets = currentSheets.filter(
+                        (s) => s.spreadsheetId && s.spreadsheetId !== targetSpreadsheetId
+                    )
+                    const otherCoursesSheets = currentSheets.filter(
+                        (s) => !s.spreadsheetId && targetCursoNumero && s.cursoNumero && s.cursoNumero.trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
+                    )
+                    finalSheets = [...sheetsFromOtherSheets, ...otherCoursesSheets, ...matchedCloudSheets]
+                } else if (targetCursoNumero) {
+                    const otherSheets = currentSheets.filter(
+                        (s) => (s.cursoNumero || '').trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
+                    )
+                    finalSheets = [...otherSheets, ...matchedCloudSheets]
+                } else {
+                    const incomingCursos = new Set(matchedCloudSheets.map((s) => (s.cursoNumero || '').trim().toLowerCase()).filter(Boolean))
+                    const incomingSpreadsheets = new Set(matchedCloudSheets.map((s) => s.spreadsheetId).filter(Boolean))
+                    const sheetsNotCovered = currentSheets.filter((s) => {
+                        const sCurso = (s.cursoNumero || '').trim().toLowerCase()
+                        if (s.spreadsheetId && incomingSpreadsheets.has(s.spreadsheetId)) return false
+                        if (sCurso && incomingCursos.has(sCurso)) return false
+                        return true
+                    })
+                    finalSheets = [...sheetsNotCovered, ...matchedCloudSheets]
+                }
+
+                set({ sheets: finalSheets })
+                return finalSheets
             },
 
             updateSheetHorario: (id, dia, valor) => set((state) => ({

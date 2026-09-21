@@ -76,6 +76,7 @@ export default function FPTopicAttendancePage() {
 
     // Estados para confirmación de eliminación y selección de sincronización
     const [sheetToDelete, setSheetToDelete] = useState(null)
+    const [entryToDelete, setEntryToDelete] = useState(null)
     const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
 
     const handleSyncSingle = async (sheetToSync) => {
@@ -244,18 +245,28 @@ export default function FPTopicAttendancePage() {
         const targetName = sheetToDelete.especialidad || 'Planilla'
         const targetTab = sheetToDelete.googleSheetTitle || buildFPTopicTabTitle(sheetToDelete)
         const targetCurso = sheetToDelete.cursoNumero
+
+        const courseForSheet = courses.find((c) =>
+            (c.id && c.id === sheetToDelete.cursoId) ||
+            (c.cursoNumero && sheetToDelete.cursoNumero && c.cursoNumero.trim().toLowerCase() === sheetToDelete.cursoNumero.trim().toLowerCase())
+        ) || activeCourse
+        const targetSpreadsheetId = sheetToDelete.spreadsheetId || courseForSheet?.links?.topicAttendance?.spreadsheetId || topicLink?.spreadsheetId
+
         deleteSheet(targetId)
+        if (selectedId === targetId) {
+            setSelectedId(null)
+        }
         setSheetToDelete(null)
 
-        if (topicLink) {
-            const remainingSheets = sheets.filter((s) => s.id !== targetId)
+        if (targetSpreadsheetId) {
+            const remainingSheets = sheets.filter((s) => s.id !== targetId && (s.spreadsheetId === targetSpreadsheetId || s.cursoNumero === targetCurso))
             setSyncing(true)
             try {
                 if (remainingSheets.length === 0) {
-                    await clearFPTopicAttendanceSheet(topicLink.spreadsheetId, topicLink.sheetTitle)
+                    await clearFPTopicAttendanceSheet(targetSpreadsheetId, targetTab)
                     toast.success(`"${targetName}" eliminada y Google Sheets vaciado`)
                 } else {
-                    await deleteFPSpreadsheetTab(topicLink.spreadsheetId, targetTab, targetCurso)
+                    await deleteFPSpreadsheetTab(targetSpreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminada`)
                 }
                 saveFPCloudRegistry().catch((err) => console.warn('[FPTopicAttendancePage] Error guardando registro en Drive:', err))
@@ -294,7 +305,7 @@ export default function FPTopicAttendancePage() {
                     toast.error('No se encontraron planillas de tema y asistencia en la hoja')
                     return
                 }
-                syncAllFromCloud(allSheets)
+                syncAllFromCloud(allSheets, spreadsheetId, activeCourse?.cursoNumero)
                 toast.success(`Se sincronizaron ${allSheets.length} planilla(s) desde Google Sheets`)
             }
         } catch (error) {
@@ -593,7 +604,11 @@ export default function FPTopicAttendancePage() {
                                         <td className="py-1.5 pr-2"><Input value={e.observaciones} onChange={(ev) => updateEntry(selected.id, e.id, { observaciones: ev.target.value })} /></td>
                                         <td className="py-1.5 pr-2 w-28"><Input placeholder="Firmado" value={e.firmaDirector} onChange={(ev) => updateEntry(selected.id, e.id, { firmaDirector: ev.target.value })} /></td>
                                         <td className="py-1.5">
-                                            <button onClick={() => deleteEntry(selected.id, e.id)} className="text-text-muted hover:text-error transition-colors">
+                                            <button
+                                                onClick={() => setEntryToDelete(e)}
+                                                className="text-text-muted hover:text-error transition-colors p-1 rounded hover:bg-bg-hover"
+                                                title="Eliminar clase"
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </td>
@@ -610,6 +625,22 @@ export default function FPTopicAttendancePage() {
                         </table>
                     </CardBody>
                 </Card>
+
+                {/* Modal de confirmación al eliminar clase */}
+                <ConfirmModal
+                    isOpen={!!entryToDelete}
+                    onClose={() => setEntryToDelete(null)}
+                    onConfirm={() => {
+                        if (entryToDelete && selected) {
+                            deleteEntry(selected.id, entryToDelete.id)
+                            toast.success('Clase eliminada')
+                            setEntryToDelete(null)
+                        }
+                    }}
+                    title="¿Desea borrar realmente esta clase?"
+                    description={`¿Está seguro de que desea eliminar la clase del día ${entryToDelete?.fecha || 'registrada'} ("${entryToDelete?.tema || 'Sin tema'}")? Esta acción no se puede deshacer.`}
+                    confirmLabel="Sí, borrar clase"
+                />
             </div>
         )
     }
@@ -724,14 +755,14 @@ export default function FPTopicAttendancePage() {
                 ))}
             </div>
 
-            {/* Modal de confirmación al eliminar */}
+            {/* Modal de confirmación al eliminar planilla */}
             <ConfirmModal
                 isOpen={!!sheetToDelete}
                 onClose={() => setSheetToDelete(null)}
                 onConfirm={handleConfirmDelete}
-                title="¿Eliminar planilla?"
-                description={`¿Estás seguro de que querés eliminar "${sheetToDelete?.especialidad || 'esta planilla'}" (Curso Nº ${sheetToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
-                confirmLabel="Eliminar y Sincronizar"
+                title="¿Desea borrar realmente esta planilla?"
+                description={`¿Está seguro de que desea eliminar "${sheetToDelete?.especialidad || 'esta planilla'}" (Curso Nº ${sheetToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
+                confirmLabel="Sí, eliminar y sincronizar"
             />
 
             {/* Modal para elegir cuál planilla sincronizar si hay varias */}

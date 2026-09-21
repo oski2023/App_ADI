@@ -75,6 +75,7 @@ export default function FPExamActPage() {
     const [linking, setLinking] = useState(false)
 
     const [actToDelete, setActToDelete] = useState(null)
+    const [studentToDelete, setStudentToDelete] = useState(null)
     const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
 
     const handleAddNewAct = () => {
@@ -357,7 +358,7 @@ export default function FPExamActPage() {
                     toast.error('No se encontraron actas en la hoja de cálculo')
                     return
                 }
-                syncAllFromCloud(allActs)
+                syncAllFromCloud(allActs, spreadsheetId, activeCourse?.cursoNumero)
                 toast.success(`Se sincronizaron ${allActs.length} acta(s) desde Google Sheets`)
             }
         } catch (error) {
@@ -533,10 +534,19 @@ export default function FPExamActPage() {
         const targetName = actToDelete.especialidad || 'Acta'
         const targetTab = actToDelete.googleSheetTitle || buildFPExamActTabTitle(actToDelete)
         const targetCurso = actToDelete.cursoNumero
+
+        const courseForAct = courses.find((c) =>
+            (c.id && c.id === actToDelete.cursoId) ||
+            (c.cursoNumero && actToDelete.cursoNumero && c.cursoNumero.trim().toLowerCase() === actToDelete.cursoNumero.trim().toLowerCase())
+        ) || activeCourse
+        const targetSpreadsheetId = actToDelete.spreadsheetId || courseForAct?.links?.examAct?.spreadsheetId || examActLink?.spreadsheetId
+
         deleteAct(targetId)
+        if (selectedId === targetId) {
+            setSelectedId(null)
+        }
         setActToDelete(null)
 
-        const targetSpreadsheetId = actToDelete.spreadsheetId || examActLink?.spreadsheetId
         if (targetSpreadsheetId) {
             setSyncing(true)
             try {
@@ -745,7 +755,11 @@ export default function FPExamActPage() {
                                         <td className="py-1 pr-2"><input className="w-20 px-1 py-1 rounded border border-border bg-bg-card text-text-primary" value={st.documentoTipo} onChange={(e) => updateStudent(selected.id, st.id, { documentoTipo: e.target.value })} /></td>
                                         <td className="py-1 pr-2"><input className="w-24 px-1 py-1 rounded border border-border bg-bg-card text-text-primary" value={st.documentoNumero} onChange={(e) => updateStudent(selected.id, st.id, { documentoNumero: e.target.value })} /></td>
                                         <td className="py-1">
-                                            <button onClick={() => deleteStudent(selected.id, st.id)} className="text-text-muted hover:text-error transition-colors">
+                                            <button
+                                                onClick={() => setStudentToDelete(st)}
+                                                className="text-text-muted hover:text-error transition-colors p-1 rounded hover:bg-bg-hover"
+                                                title="Eliminar alumno del acta"
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </td>
@@ -810,6 +824,22 @@ export default function FPExamActPage() {
                         <Input label="Inspector" value={selected.inspector} onChange={(e) => updateAct(selected.id, { inspector: e.target.value })} />
                     </CardBody>
                 </Card>
+
+                {/* Modal de confirmación al eliminar alumno del acta */}
+                <ConfirmModal
+                    isOpen={!!studentToDelete}
+                    onClose={() => setStudentToDelete(null)}
+                    onConfirm={() => {
+                        if (studentToDelete && selected) {
+                            deleteStudent(selected.id, studentToDelete.id)
+                            toast.success(`Estudiante "${studentToDelete.apellidosNombres || 'seleccionado'}" eliminado/a del acta`)
+                            setStudentToDelete(null)
+                        }
+                    }}
+                    title="¿Desea borrar realmente este alumno/a del acta?"
+                    description={`¿Está seguro de que desea eliminar a "${studentToDelete?.apellidosNombres || 'este estudiante'}" del acta de examen? Esta acción no se puede deshacer.`}
+                    confirmLabel="Sí, borrar alumno"
+                />
             </div>
         )
     }
@@ -924,14 +954,14 @@ export default function FPExamActPage() {
                 ))}
             </div>
 
-            {/* Modal de confirmación al eliminar */}
+            {/* Modal de confirmación al eliminar acta */}
             <ConfirmModal
                 isOpen={!!actToDelete}
                 onClose={() => setActToDelete(null)}
                 onConfirm={handleConfirmDelete}
-                title="¿Eliminar acta de examen?"
-                description={`¿Estás seguro de que querés eliminar "${actToDelete?.especialidad || 'esta acta'}" (Curso Nº ${actToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
-                confirmLabel="Eliminar y Sincronizar"
+                title="¿Desea borrar realmente esta acta de examen?"
+                description={`¿Está seguro de que desea eliminar "${actToDelete?.especialidad || 'esta acta'}" (Curso Nº ${actToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
+                confirmLabel="Sí, eliminar y sincronizar"
             />
 
             {/* Modal para elegir cuál acta sincronizar si hay varias */}

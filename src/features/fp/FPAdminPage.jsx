@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
+import ConfirmModal from '../../shared/components/ConfirmModal'
 import {
     ChevronDown, ChevronRight, Pencil, X, RefreshCw, Briefcase,
     Sliders, ExternalLink, Trash2, Plus, Check, Download
@@ -43,8 +44,10 @@ export default function FPAdminPage() {
     const [editDraft, setEditDraft] = useState({})
     const [draftByMonth, setDraftByMonth] = useState({})
     const [newMonthDraft, setNewMonthDraft] = useState({ mes: '', documento: '', cohorte: 'Sin cohorte', cantidad: '', link: '' })
-        const [syncing, setSyncing] = useState(false)
+    const [syncing, setSyncing] = useState(false)
     const [loading, setLoading] = useState(false)
+    const [recordToDelete, setRecordToDelete] = useState(null)
+    const [tipoToUnlink, setTipoToUnlink] = useState(null)
 
     const handleLoadFromSheets = async () => {
         if (tipos.length === 0) {
@@ -285,7 +288,7 @@ export default function FPAdminPage() {
                                             <Button variant="outline" size="sm" icon={ExternalLink} onClick={() => window.open(links[tipo].spreadsheetUrl, '_blank')}>
                                                 Ver Archivo
                                             </Button>
-                                            <Button variant="ghost" size="sm" icon={Trash2} onClick={() => clearLink(tipo)}>
+                                            <Button variant="ghost" size="sm" icon={Trash2} onClick={() => setTipoToUnlink(tipo)}>
                                                 Desvincular
                                             </Button>
                                         </div>
@@ -377,7 +380,7 @@ export default function FPAdminPage() {
                                                     </button>
                                                     <div className="flex-1" />
                                                     <button onClick={() => startEdit(r)} className="text-text-muted hover:text-primary transition-colors"><Pencil className="w-4 h-4" /></button>
-                                                    <button onClick={() => deleteRecord(r.id)} className="text-text-muted hover:text-error transition-colors"><X className="w-4 h-4" /></button>
+                                                    <button onClick={() => setRecordToDelete(r)} className="text-text-muted hover:text-error transition-colors"><X className="w-4 h-4" /></button>
                                                 </>
                                             )}
                                         </div>
@@ -422,6 +425,42 @@ export default function FPAdminPage() {
                     <Button icon={Plus} onClick={handleAgregarMesNuevo}>Agregar entrega</Button>
                 </CardBody>
             </Card>
+
+            {/* Modal de confirmación para eliminar registro */}
+            <ConfirmModal
+                isOpen={!!recordToDelete}
+                onClose={() => setRecordToDelete(null)}
+                onConfirm={() => {
+                    if (recordToDelete) {
+                        deleteRecord(recordToDelete.id)
+                        toast.success('Registro eliminado')
+                        setRecordToDelete(null)
+                    }
+                }}
+                title="¿Desea borrar realmente este registro?"
+                message={recordToDelete ? `Se eliminará la entrega de "${recordToDelete.documento || 'Documento'}" (${recordToDelete.mes || ''}). Esta acción no se puede deshacer.` : ''}
+                confirmText="Sí, borrar"
+                cancelText="Cancelar"
+                variant="danger"
+            />
+
+            {/* Modal de confirmación para desvincular tipo de documento */}
+            <ConfirmModal
+                isOpen={!!tipoToUnlink}
+                onClose={() => setTipoToUnlink(null)}
+                onConfirm={() => {
+                    if (tipoToUnlink) {
+                        clearLink(tipoToUnlink)
+                        toast.success(`Tipo "${tipoToUnlink}" desvinculado`)
+                        setTipoToUnlink(null)
+                    }
+                }}
+                title="¿Desea desvincular realmente este tipo de documento?"
+                message={tipoToUnlink ? `Se quitará la vinculación de "${tipoToUnlink}". La hoja de cálculo no se borrará de Google Drive.` : ''}
+                confirmText="Sí, desvincular"
+                cancelText="Cancelar"
+                variant="danger"
+            />
         </div>
     )
 }

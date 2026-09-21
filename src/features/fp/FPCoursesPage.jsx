@@ -74,6 +74,7 @@ export default function FPCoursesPage() {
 
     // Estados para confirmación de eliminación y selección de sincronización
     const [courseToDelete, setCourseToDelete] = useState(null)
+    const [studentToDelete, setStudentToDelete] = useState(null)
     const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
 
     const handleCreateCourseFromLink = async () => {
@@ -871,7 +872,11 @@ export default function FPCoursesPage() {
                                             />
                                         </td>
                                         <td className="py-1.5">
-                                            <button onClick={() => deleteStudent(selected.id, s.id)} className="text-text-muted hover:text-error transition-colors">
+                                            <button
+                                                onClick={() => setStudentToDelete(s)}
+                                                className="text-text-muted hover:text-error transition-colors p-1 rounded hover:bg-bg-hover"
+                                                title="Eliminar estudiante"
+                                            >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </td>
@@ -888,6 +893,22 @@ export default function FPCoursesPage() {
                         </table>
                     </CardBody>
                 </Card>
+
+                {/* Modal de confirmación al eliminar alumno de la Ficha de Curso */}
+                <ConfirmModal
+                    isOpen={!!studentToDelete}
+                    onClose={() => setStudentToDelete(null)}
+                    onConfirm={() => {
+                        if (studentToDelete && selected) {
+                            deleteStudent(selected.id, studentToDelete.id)
+                            toast.success(`Estudiante "${studentToDelete.apellidosNombres || 'seleccionado'}" eliminado/a`)
+                            setStudentToDelete(null)
+                        }
+                    }}
+                    title="¿Desea borrar realmente este alumno/a?"
+                    description={`¿Está seguro de que desea eliminar a "${studentToDelete?.apellidosNombres || 'este estudiante'}" de la Ficha de Curso? Esta acción no se puede deshacer.`}
+                    confirmLabel="Sí, borrar alumno"
+                />
             </div>
         )
     }
@@ -968,14 +989,14 @@ export default function FPCoursesPage() {
                 ))}
             </div>
 
-            {/* Modal de confirmación al eliminar */}
+            {/* Modal de confirmación al eliminar curso */}
             <ConfirmModal
                 isOpen={!!courseToDelete}
                 onClose={() => setCourseToDelete(null)}
                 onConfirm={handleConfirmDelete}
-                title="¿Eliminar curso?"
-                description={`¿Estás seguro de que querés eliminar "${courseToDelete?.especialidad || 'este curso'}" (Curso Nº ${courseToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
-                confirmLabel="Eliminar y Sincronizar"
+                title="¿Desea borrar realmente este curso?"
+                description={`¿Está seguro de que desea eliminar "${courseToDelete?.especialidad || 'este curso'}" (Curso Nº ${courseToDelete?.cursoNumero || '—'})? Esta acción no se puede deshacer.`}
+                confirmLabel="Sí, eliminar y sincronizar"
             />
 
             {/* Modal para elegir cuál curso sincronizar si hay varios */}
