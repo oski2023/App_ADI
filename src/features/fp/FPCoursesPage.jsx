@@ -5,7 +5,7 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud, AlertTriangle } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud, AlertTriangle, ArrowDownAZ } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
@@ -24,6 +24,17 @@ const DIAS = [
     { key: 'viernes', label: 'Viernes' },
     { key: 'sabado', label: 'Sábado' },
 ]
+
+export const sortStudentsAZ = (students) => {
+    return [...(students || [])].sort((a, b) => {
+        const nameA = (a.apellidosNombres || '').trim()
+        const nameB = (b.apellidosNombres || '').trim()
+        if (!nameA && !nameB) return 0
+        if (!nameA) return 1
+        if (!nameB) return -1
+        return nameA.localeCompare(nameB, 'es', { sensitivity: 'base' })
+    })
+}
 
 export default function FPCoursesPage() {
     const courses = useFPCourseStore((s) => s.courses)
@@ -145,6 +156,13 @@ export default function FPCoursesPage() {
         setSelectedId(newId)
     }
 
+    const handleSortStudentsAZ = () => {
+        if (!selected?.students || selected.students.length <= 1) return
+        const sorted = sortStudentsAZ(selected.students)
+        updateCourse(selected.id, { students: sorted })
+        toast.success('Estudiantes ordenados alfabéticamente (A-Z)')
+    }
+
     const handleSyncSingle = async (courseToSync) => {
         const targetSpreadsheetId = courseToSync.spreadsheetId || courseLink?.spreadsheetId
         const targetSheetTitle = courseToSync.googleSheetTitle || courseLink?.sheetTitle
@@ -154,11 +172,16 @@ export default function FPCoursesPage() {
         }
         setSyncing(true)
         try {
-            const res = await syncFPCourseSheet(targetSpreadsheetId, targetSheetTitle, courseToSync)
+            // Ordenar automáticamente los alumnos de A a Z por Apellidos y Nombres antes de enviar a Google Sheets
+            const sortedStudents = sortStudentsAZ(courseToSync.students)
+            updateCourse(courseToSync.id, { students: sortedStudents })
+            const preparedCourse = { ...courseToSync, students: sortedStudents }
+
+            const res = await syncFPCourseSheet(targetSpreadsheetId, targetSheetTitle, preparedCourse)
             if (res?.sheetTitle && res.sheetTitle !== courseToSync.googleSheetTitle) {
                 updateCourse(courseToSync.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
             }
-            toast.success(`"${courseToSync.especialidad || 'Curso'}" sincronizado con Google Sheets`)
+            toast.success(`"${courseToSync.especialidad || 'Curso'}" sincronizado con Google Sheets (alumnos ordenados A-Z)`)
             saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
@@ -183,7 +206,13 @@ export default function FPCoursesPage() {
                 const targetSpreadsheetId = c.spreadsheetId || courseLink?.spreadsheetId
                 const targetSheetTitle = c.googleSheetTitle || courseLink?.sheetTitle
                 if (!targetSpreadsheetId) continue
-                const res = await syncFPCourseSheet(targetSpreadsheetId, targetSheetTitle, c)
+
+                // Ordenar automáticamente cada curso de A a Z antes de sincronizar
+                const sortedStudents = sortStudentsAZ(c.students)
+                updateCourse(c.id, { students: sortedStudents })
+                const preparedCourse = { ...c, students: sortedStudents }
+
+                const res = await syncFPCourseSheet(targetSpreadsheetId, targetSheetTitle, preparedCourse)
                 if (res?.sheetTitle && res.sheetTitle !== c.googleSheetTitle) {
                     updateCourse(c.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
                 }
@@ -193,7 +222,7 @@ export default function FPCoursesPage() {
                 setShowLinkModal(true)
                 return
             }
-            toast.success(`${count} curso(s) sincronizado(s) con Google Sheets`)
+            toast.success(`${count} curso(s) sincronizado(s) con Google Sheets (alumnos ordenados A-Z)`)
             saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
@@ -588,28 +617,43 @@ export default function FPCoursesPage() {
                 {/* Nómina de estudiantes */}
                 <Card>
                     <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
-                        <h2 className="text-base font-semibold text-text-primary">Nómina de Estudiantes</h2>
-                        <Button
-                            icon={Plus}
-                            size="sm"
-                            onClick={() => {
-                                addStudent(selected.id)
-                                useFPUpdateAlertStore.getState().setPendingUpdate(selected.id, selected.especialidad, selected.cursoNumero)
-                                toast(
-                                    (t) => (
-                                        <div className="flex flex-col gap-1">
-                                            <span className="font-bold text-amber-700 dark:text-amber-300">¡Alumno agregado a Ficha de Curso!</span>
-                                            <span className="text-xs text-text-secondary">
-                                                Recordá presionar <strong>"Actualizar de Ficha de Curso"</strong> en <strong>Asistencia de Alumnos</strong> y en <strong>Actas de Examen</strong>.
-                                            </span>
-                                        </div>
-                                    ),
-                                    { duration: 7000, icon: '📋' }
-                                )
-                            }}
-                        >
-                            Agregar Estudiante
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <h2 className="text-base font-semibold text-text-primary">Nómina de Estudiantes</h2>
+                            <span className="text-xs text-text-muted">({selected.students?.length || 0})</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                icon={ArrowDownAZ}
+                                size="sm"
+                                variant="outline"
+                                onClick={handleSortStudentsAZ}
+                                disabled={!selected?.students || selected.students.length <= 1}
+                                title="Ordenar estudiantes alfabéticamente de A a Z por Apellidos y Nombres"
+                            >
+                                Ordenar A-Z
+                            </Button>
+                            <Button
+                                icon={Plus}
+                                size="sm"
+                                onClick={() => {
+                                    addStudent(selected.id)
+                                    useFPUpdateAlertStore.getState().setPendingUpdate(selected.id, selected.especialidad, selected.cursoNumero)
+                                    toast(
+                                        (t) => (
+                                            <div className="flex flex-col gap-1">
+                                                <span className="font-bold text-amber-700 dark:text-amber-300">¡Alumno agregado a Ficha de Curso!</span>
+                                                <span className="text-xs text-text-secondary">
+                                                    Recordá presionar <strong>"Actualizar de Ficha de Curso"</strong> en <strong>Asistencia de Alumnos</strong> y en <strong>Actas de Examen</strong>.
+                                                </span>
+                                            </div>
+                                        ),
+                                        { duration: 7000, icon: '📋' }
+                                    )
+                                }}
+                            >
+                                Agregar Estudiante
+                            </Button>
+                        </div>
                     </div>
 
                     {hasAlertForSelected && (
