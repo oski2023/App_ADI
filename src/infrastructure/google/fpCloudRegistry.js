@@ -102,9 +102,9 @@ export async function saveFPCloudRegistry(customPayload = null) {
                 cfpNumero: c.cfpNumero || '',
                 distrito: c.distrito || '',
                 instructor: c.instructor || '',
-                spreadsheetId: c.spreadsheetId || '',
-                spreadsheetUrl: c.spreadsheetUrl || '',
-                googleSheetTitle: c.googleSheetTitle || '',
+                spreadsheetId: c.spreadsheetId || currentLinks.course?.spreadsheetId || '',
+                spreadsheetUrl: c.spreadsheetUrl || currentLinks.course?.spreadsheetUrl || '',
+                googleSheetTitle: c.googleSheetTitle || currentLinks.course?.sheetTitle || '',
             })),
             ...(customPayload || {}),
         }

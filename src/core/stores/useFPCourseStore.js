@@ -59,38 +59,56 @@ const useFPCourseStore = create(
 
                 if (targetId && currentCourses.some((c) => c.id === targetId)) {
                     set((state) => ({
-                        courses: state.courses.map((c) => (c.id === targetId ? { ...c, ...courseData } : c)),
+                        courses: state.courses.map((c) => (c.id === targetId ? { ...c, ...courseData, id: targetId } : c)),
                     }))
                     return targetId
                 }
 
                 const existingIndex = currentCourses.findIndex((c) => {
-                    if (c.googleSheetTitle && courseData.googleSheetTitle && c.googleSheetTitle === courseData.googleSheetTitle) {
-                        return true
-                    }
+                    // 1. Coincidencia por id exacto
+                    if (courseData.id && c.id === courseData.id) return true
+
                     const cCurso = (c.cursoNumero || '').trim().toLowerCase()
                     const dCurso = (courseData.cursoNumero || '').trim().toLowerCase()
-                    const cEsp = (c.especialidad || '').trim().toLowerCase()
-                    const dEsp = (courseData.especialidad || '').trim().toLowerCase()
 
-                    if (cCurso && dCurso && cCurso === dCurso) return true
-                    if (cEsp && dEsp && cEsp === dEsp) return true
-                    if (c.cfpNumero && courseData.cfpNumero && c.cfpNumero === courseData.cfpNumero && cCurso && dCurso && cCurso === dCurso) {
+                    // Si ambos tienen número de curso y son diferentes, definitivamente NO son el mismo curso
+                    if (cCurso && dCurso && cCurso !== dCurso) return false
+
+                    // 2. Misma hoja y misma pestaña de Google Sheets
+                    if (c.spreadsheetId && courseData.spreadsheetId && c.spreadsheetId === courseData.spreadsheetId) {
+                        if (c.googleSheetTitle && courseData.googleSheetTitle && c.googleSheetTitle === courseData.googleSheetTitle) {
+                            return true
+                        }
+                    }
+
+                    // 3. Mismo número de curso
+                    if (cCurso && dCurso && cCurso === dCurso) {
+                        const cCfp = (c.cfpNumero || '').trim().toLowerCase()
+                        const dCfp = (courseData.cfpNumero || '').trim().toLowerCase()
+                        if (cCfp && dCfp && cCfp !== dCfp) return false
                         return true
                     }
+
+                    // 4. Misma pestaña si coincide en la misma hoja (o sin spreadsheetId definido aún)
+                    if (c.googleSheetTitle && courseData.googleSheetTitle && c.googleSheetTitle === courseData.googleSheetTitle) {
+                        if (!c.spreadsheetId || !courseData.spreadsheetId || c.spreadsheetId === courseData.spreadsheetId) {
+                            return true
+                        }
+                    }
+
                     return false
                 })
 
                 if (existingIndex >= 0) {
                     updatedId = currentCourses[existingIndex].id
                     set((state) => ({
-                        courses: state.courses.map((c, idx) => (idx === existingIndex ? { ...c, ...courseData } : c)),
+                        courses: state.courses.map((c, idx) => (idx === existingIndex ? { ...c, ...courseData, id: updatedId } : c)),
                     }))
                 } else {
                     const newCourse = {
                         ...emptyCourse(),
                         ...courseData,
-                        id: crypto.randomUUID(),
+                        id: courseData.id || crypto.randomUUID(),
                     }
                     updatedId = newCourse.id
                     set((state) => ({ courses: [...state.courses, newCourse] }))
@@ -100,24 +118,61 @@ const useFPCourseStore = create(
             },
 
             // Sincronización completa (Espejo de Google Sheets)
-            syncAllFromCloud: (cloudCourses) => {
+            // Permite actualizar todos los cursos o solo los pertenecientes a un spreadsheet específico
+            syncAllFromCloud: (cloudCourses, targetSpreadsheetId = null) => {
                 const currentCourses = get().courses
-                const updatedList = cloudCourses.map((cCourse) => {
+
+                // Encontrar o emparejar cada curso de la nube con un curso existente
+                const matchedCloudCourses = cloudCourses.map((cCourse) => {
                     const match = currentCourses.find((c) => {
-                        if (c.googleSheetTitle && cCourse.googleSheetTitle && c.googleSheetTitle === cCourse.googleSheetTitle) return true
+                        if (cCourse.id && c.id === cCourse.id) return true
                         const sCurso = (c.cursoNumero || '').trim().toLowerCase()
                         const dCurso = (cCourse.cursoNumero || '').trim().toLowerCase()
+                        if (sCurso && dCurso && sCurso !== dCurso) return false
+
+                        if (c.spreadsheetId && cCourse.spreadsheetId && c.spreadsheetId === cCourse.spreadsheetId) {
+                            if (c.googleSheetTitle && cCourse.googleSheetTitle && c.googleSheetTitle === cCourse.googleSheetTitle) {
+                                return true
+                            }
+                        }
+
                         if (sCurso && dCurso && sCurso === dCurso) return true
+
+                        if (c.googleSheetTitle && cCourse.googleSheetTitle && c.googleSheetTitle === cCourse.googleSheetTitle) {
+                            if (!c.spreadsheetId || !cCourse.spreadsheetId || c.spreadsheetId === cCourse.spreadsheetId) {
+                                return true
+                            }
+                        }
                         return false
                     })
+
                     return {
                         ...emptyCourse(),
+                        ...(match || {}),
                         ...cCourse,
-                        id: match ? match.id : crypto.randomUUID(),
+                        id: match ? match.id : (cCourse.id || crypto.randomUUID()),
                     }
                 })
-                set({ courses: updatedList })
-                return updatedList
+
+                let finalCourses = []
+                if (targetSpreadsheetId) {
+                    // Si se especifica targetSpreadsheetId, preservamos los cursos que pertenecen a OTRAS hojas
+                    const coursesFromOtherSheets = currentCourses.filter(
+                        (c) => c.spreadsheetId && c.spreadsheetId !== targetSpreadsheetId
+                    )
+                    finalCourses = [...coursesFromOtherSheets, ...matchedCloudCourses]
+                } else {
+                    // Si cloudCourses incluye cursos de varias hojas (o todas), preservamos aquellos cursos locales
+                    // que pertenecen a planillas que NO vinieron en cloudCourses (para evitar borrados accidentales)
+                    const cloudSpreadsheetIds = new Set(matchedCloudCourses.map((c) => c.spreadsheetId).filter(Boolean))
+                    const coursesNotCovered = currentCourses.filter(
+                        (c) => c.spreadsheetId && !cloudSpreadsheetIds.has(c.spreadsheetId)
+                    )
+                    finalCourses = [...coursesNotCovered, ...matchedCloudCourses]
+                }
+
+                set({ courses: finalCourses })
+                return finalCourses
             },
 
             updateCourseHorario: (id, dia, valor) => set((state) => ({

@@ -520,7 +520,12 @@ export async function readFPCourseSheet(spreadsheetId, sheetTitle) {
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
-        return parseFPCourseGrid(rows, sheetTitle)
+        const parsed = parseFPCourseGrid(rows, sheetTitle)
+        return {
+            ...parsed,
+            spreadsheetId,
+            spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+        }
     } catch (error) {
         console.error('[SheetsService] Error al leer Ficha de Curso:', error)
         throw error
@@ -556,7 +561,11 @@ export async function readAllFPCourseSheets(spreadsheetId) {
                 parsed.students.length > 0
 
             if (hasData || tabs.length === 1) {
-                results.push(parsed)
+                results.push({
+                    ...parsed,
+                    spreadsheetId,
+                    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+                })
             }
         })
         return results

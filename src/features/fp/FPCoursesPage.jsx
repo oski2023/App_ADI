@@ -234,18 +234,20 @@ export default function FPCoursesPage() {
         const targetName = courseToDelete.especialidad || 'Curso'
         const targetTab = courseToDelete.googleSheetTitle || buildFPCourseTabTitle(courseToDelete)
         const targetCurso = courseToDelete.cursoNumero
+        const targetSpreadsheetId = courseToDelete.spreadsheetId || courseLink?.spreadsheetId
+        const targetSheetTitle = courseToDelete.googleSheetTitle || courseLink?.sheetTitle
         deleteCourse(targetId)
         setCourseToDelete(null)
 
-        if (courseLink) {
-            const remainingCourses = courses.filter((c) => c.id !== targetId)
+        if (targetSpreadsheetId) {
+            const remainingCourses = courses.filter((c) => c.id !== targetId && (c.spreadsheetId === targetSpreadsheetId || (!c.spreadsheetId && targetSpreadsheetId === courseLink?.spreadsheetId)))
             setSyncing(true)
             try {
                 if (remainingCourses.length === 0) {
-                    await clearFPCourseSheet(courseLink.spreadsheetId, courseLink.sheetTitle)
+                    await clearFPCourseSheet(targetSpreadsheetId, targetSheetTitle)
                     toast.success(`"${targetName}" eliminado y Google Sheets vaciado`)
                 } else {
-                    await deleteFPSpreadsheetTab(courseLink.spreadsheetId, targetTab, targetCurso)
+                    await deleteFPSpreadsheetTab(targetSpreadsheetId, targetTab, targetCurso)
                     toast.success(`"${targetName}" eliminado`)
                 }
                 saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
@@ -264,32 +266,38 @@ export default function FPCoursesPage() {
         }
     }
 
-    const executePull = async (spreadsheetId, sheetTitle, targetCourseId = null) => {
+    const executePullSingle = async (spreadsheetId, sheetTitle, targetCourseId) => {
         setPulling(true)
         try {
-            if (targetCourseId) {
-                const current = courses.find((c) => c.id === targetCourseId)
-                const tabTitle = current?.googleSheetTitle || sheetTitle
-                const data = await readFPCourseSheet(spreadsheetId, tabTitle)
-                if (!data) {
-                    toast.error('No se pudieron leer los datos del curso')
-                    return
-                }
-                const updatedId = importOrUpdateCourse(data, targetCourseId)
-                setSelectedId(updatedId)
-                toast.success(`Curso traído desde Google Sheets (${data.students.length} estudiantes)`)
-            } else {
-                const allCourses = await readAllFPCourseSheets(spreadsheetId)
-                if (!allCourses || allCourses.length === 0) {
-                    toast.error('No se encontraron cursos en la hoja')
-                    return
-                }
-                syncAllFromCloud(allCourses)
-                toast.success(`Se sincronizaron ${allCourses.length} curso(s) desde Google Sheets`)
+            const current = courses.find((c) => c.id === targetCourseId)
+            const tabTitle = current?.googleSheetTitle || sheetTitle
+            let data = null
+            try {
+                data = await readFPCourseSheet(spreadsheetId, tabTitle)
+            } catch (err) {
+                console.warn('[FPCoursesPage] Error leyendo pestaña específica, buscando en el archivo:', err)
             }
+            if (!data) {
+                const all = await readAllFPCourseSheets(spreadsheetId)
+                if (all && all.length > 0) {
+                    data = all.find((c) => (c.cursoNumero && c.cursoNumero === current?.cursoNumero) || c.googleSheetTitle === tabTitle) || all[0]
+                }
+            }
+            if (!data) {
+                toast.error('No se pudieron leer los datos del curso desde Google Sheets')
+                return
+            }
+            const updatedId = importOrUpdateCourse({
+                ...data,
+                spreadsheetId,
+                spreadsheetUrl: current?.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+            }, targetCourseId)
+            setSelectedId(updatedId)
+            toast.success(`Curso traído desde Google Sheets (${data.students.length} estudiantes)`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
         } catch (error) {
             if (isAuthError(error)) {
-                notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetCourseId))
+                notifyAuthExpired(() => executePullSingle(spreadsheetId, sheetTitle, targetCourseId))
             } else {
                 toast.error('Error al traer los datos desde Google Sheets')
             }
@@ -298,47 +306,145 @@ export default function FPCoursesPage() {
         }
     }
 
-    const handlePullFromSheets = async (targetCourseId = null) => {
-        let targetCourse = targetCourseId ? courses.find((c) => c.id === targetCourseId) : null
-        let targetSpreadsheetId = targetCourse?.spreadsheetId || courseLink?.spreadsheetId
-        let targetSheetTitle = targetCourse?.googleSheetTitle || courseLink?.sheetTitle
+    const executePullAll = async (spreadsheetsList) => {
+        setPulling(true)
+        try {
+            let allCourses = []
+            let fetchedFilesCount = 0
 
-        // Si no tiene spreadsheetId localmente (ej. en el Celular), auto-descubrir desde Google Drive
-        if (!targetSpreadsheetId) {
-            setPulling(true)
-            const toastId = toast.loading('Buscando cursos y vínculos en Google Drive...')
-            try {
-                const cloudRes = await autoDiscoverAndSyncCloudRegistry()
-                toast.dismiss(toastId)
-                if (cloudRes.success) {
-                    const freshCourseLink = useFPGoogleLinksStore.getState().links.course
-                    const freshCourses = useFPCourseStore.getState().courses
-                    targetCourse = targetCourseId ? freshCourses.find((c) => c.id === targetCourseId) : null
-                    targetSpreadsheetId = targetCourse?.spreadsheetId || freshCourseLink?.spreadsheetId
-                    targetSheetTitle = targetCourse?.googleSheetTitle || freshCourseLink?.sheetTitle
-                    if (targetSpreadsheetId) {
-                        toast.success('¡Vínculos detectados automáticamente desde Google Drive!')
+            for (const sItem of spreadsheetsList) {
+                const sId = sItem.spreadsheetId
+                if (!sId) continue
+                try {
+                    const coursesInSheet = await readAllFPCourseSheets(sId)
+                    if (coursesInSheet && coursesInSheet.length > 0) {
+                        coursesInSheet.forEach((c) => {
+                            c.spreadsheetId = sId
+                            c.spreadsheetUrl = sItem.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${sId}/edit`
+                        })
+                        allCourses.push(...coursesInSheet)
+                        fetchedFilesCount++
+                    }
+                } catch (sheetErr) {
+                    console.warn(`[FPCoursesPage] Error leyendo hoja ${sId}:`, sheetErr)
+                    if (isAuthError(sheetErr)) {
+                        notifyAuthExpired(() => executePullAll(spreadsheetsList))
+                        return
                     }
                 }
-            } catch (err) {
-                toast.dismiss(toastId)
-                console.warn('[FPCoursesPage] Error buscando en Drive:', err)
-            } finally {
-                setPulling(false)
             }
+
+            if (allCourses.length === 0) {
+                toast.error('No se encontraron cursos en las hojas vinculadas')
+                return
+            }
+
+            syncAllFromCloud(allCourses)
+            toast.success(`Se sincronizaron ${allCourses.length} curso(s) desde ${fetchedFilesCount} archivo(s) de Google Sheets`)
+            saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
+        } catch (error) {
+            if (isAuthError(error)) {
+                notifyAuthExpired(() => executePullAll(spreadsheetsList))
+            } else {
+                toast.error('Error al traer los datos desde Google Sheets')
+            }
+        } finally {
+            setPulling(false)
+        }
+    }
+
+    const executePull = async (spreadsheetId, sheetTitle, targetCourseId = null) => {
+        if (targetCourseId) {
+            return executePullSingle(spreadsheetId, sheetTitle, targetCourseId)
+        }
+        return executePullAll([{ spreadsheetId, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit` }])
+    }
+
+    const handlePullFromSheets = async (targetCourseId = null) => {
+        if (targetCourseId) {
+            let targetCourse = courses.find((c) => c.id === targetCourseId)
+            let targetSpreadsheetId = targetCourse?.spreadsheetId || courseLink?.spreadsheetId
+            let targetSheetTitle = targetCourse?.googleSheetTitle || courseLink?.sheetTitle
+
+            if (!targetSpreadsheetId) {
+                setPulling(true)
+                const toastId = toast.loading('Buscando vínculos en Google Drive...')
+                try {
+                    const cloudRes = await autoDiscoverAndSyncCloudRegistry()
+                    toast.dismiss(toastId)
+                    if (cloudRes.success) {
+                        const freshCourseLink = useFPGoogleLinksStore.getState().links.course
+                        const freshCourses = useFPCourseStore.getState().courses
+                        targetCourse = freshCourses.find((c) => c.id === targetCourseId)
+                        targetSpreadsheetId = targetCourse?.spreadsheetId || freshCourseLink?.spreadsheetId
+                        targetSheetTitle = targetCourse?.googleSheetTitle || freshCourseLink?.sheetTitle
+                    }
+                } catch (err) {
+                    toast.dismiss(toastId)
+                    console.warn('[FPCoursesPage] Error buscando en Drive:', err)
+                } finally {
+                    setPulling(false)
+                }
+            }
+
+            if (!targetSpreadsheetId) {
+                setShowLinkModal(true)
+                return
+            }
+
+            const confirmMsg = 'Esto va a recargar los datos de este curso desde Google Sheets. ¿Continuar?'
+            if (!window.confirm(confirmMsg)) {
+                return
+            }
+            await executePullSingle(targetSpreadsheetId, targetSheetTitle, targetCourseId)
+            return
         }
 
-        if (!targetSpreadsheetId) {
+        // Pull general de TODOS los cursos (PC y Celular)
+        setPulling(true)
+        const toastId = toast.loading('Buscando cursos y vínculos en Google Drive...')
+        try {
+            await autoDiscoverAndSyncCloudRegistry()
+        } catch (err) {
+            console.warn('[FPCoursesPage] Error auto-descubriendo registro:', err)
+        } finally {
+            toast.dismiss(toastId)
+            setPulling(false)
+        }
+
+        const freshCourses = useFPCourseStore.getState().courses
+        const freshCourseLink = useFPGoogleLinksStore.getState().links.course
+
+        // Recolectar todas las planillas únicas registradas
+        const spreadsheetsMap = new Map()
+        if (freshCourseLink?.spreadsheetId) {
+            spreadsheetsMap.set(freshCourseLink.spreadsheetId, {
+                spreadsheetId: freshCourseLink.spreadsheetId,
+                spreadsheetUrl: freshCourseLink.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${freshCourseLink.spreadsheetId}/edit`,
+            })
+        }
+        freshCourses.forEach((c) => {
+            if (c.spreadsheetId) {
+                spreadsheetsMap.set(c.spreadsheetId, {
+                    spreadsheetId: c.spreadsheetId,
+                    spreadsheetUrl: c.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${c.spreadsheetId}/edit`,
+                })
+            }
+        })
+
+        const uniqueSpreadsheets = Array.from(spreadsheetsMap.values())
+
+        if (uniqueSpreadsheets.length === 0) {
             setShowLinkModal(true)
             return
         }
-        const confirmMsg = targetCourseId
-            ? 'Esto va a recargar los datos de este curso desde Google Sheets. ¿Continuar?'
-            : 'Esto va a sincronizar este dispositivo con Google Sheets. Los cursos quedarán exactamente iguales a los de la nube (se actualizarán y se eliminarán los que ya no existan en Google Sheets). ¿Continuar?'
+
+        const confirmMsg = `Esto va a sincronizar este dispositivo con Google Sheets (${uniqueSpreadsheets.length} archivo(s) vinculado(s)). ¿Continuar?`
         if (!window.confirm(confirmMsg)) {
             return
         }
-        executePull(targetSpreadsheetId, targetSheetTitle, targetCourseId)
+
+        await executePullAll(uniqueSpreadsheets)
     }
 
     const handleLinkAndPull = async () => {
@@ -357,12 +463,33 @@ export default function FPCoursesPage() {
                 toast.error('No se pudo interpretar el archivo de Google Sheets')
                 return
             }
-            setLink('course', result)
+            if (!courseLink) {
+                setLink('course', result)
+            }
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')
-            saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
-            await executePull(result.spreadsheetId, result.sheetTitle, selectedId)
+
+            if (selectedId) {
+                updateCourse(selectedId, {
+                    spreadsheetId: result.spreadsheetId,
+                    spreadsheetUrl: linkInput.trim(),
+                    googleSheetTitle: result.sheetTitle,
+                })
+                saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
+                await executePullSingle(result.spreadsheetId, result.sheetTitle, selectedId)
+            } else {
+                const coursesInSheet = await readAllFPCourseSheets(result.spreadsheetId)
+                if (coursesInSheet && coursesInSheet.length > 0) {
+                    coursesInSheet.forEach((c) => {
+                        c.spreadsheetId = result.spreadsheetId
+                        c.spreadsheetUrl = linkInput.trim()
+                    })
+                    syncAllFromCloud(coursesInSheet, result.spreadsheetId)
+                    saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
+                    toast.success(`Se importaron ${coursesInSheet.length} curso(s) desde la hoja vinculada`)
+                }
+            }
         } catch (error) {
             console.error('[FPCoursesPage] Error al vincular y descargar:', error)
             if (isAuthError(error)) {
@@ -757,10 +884,7 @@ export default function FPCoursesPage() {
                                     if (res.success) {
                                         toast.success(`¡Sincronizado desde Drive! (${res.coursesRestored} cursos)`)
                                         setShowLinkModal(false)
-                                        const freshLink = useFPGoogleLinksStore.getState().links.course
-                                        if (freshLink?.spreadsheetId) {
-                                            executePull(freshLink.spreadsheetId, freshLink.sheetTitle)
-                                        }
+                                        await handlePullFromSheets()
                                     } else {
                                         toast.error('No se encontraron vínculos guardados en Google Drive')
                                     }
