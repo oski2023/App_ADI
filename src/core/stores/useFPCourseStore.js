@@ -21,6 +21,14 @@ const emptyCourse = () => ({
     googleSheetTitle: '',
     spreadsheetId: '',
     spreadsheetUrl: '',
+    folderId: '',
+    folderName: '',
+    links: {
+        course: null,
+        topicAttendance: null,
+        attendanceSheet: null,
+        examAct: null,
+    },
 })
 
 const emptyStudent = () => ({
@@ -52,6 +60,19 @@ const useFPCourseStore = create(
                 courses: state.courses.map((c) => (c.id === id ? { ...c, ...data } : c)),
             })),
 
+            updateCourseLinks: (id, links, folderData = {}) => set((state) => ({
+                courses: state.courses.map((c) =>
+                    c.id === id
+                        ? {
+                            ...c,
+                            links: { ...(c.links || {}), ...links },
+                            ...(folderData.folderId !== undefined ? { folderId: folderData.folderId } : {}),
+                            ...(folderData.folderName !== undefined ? { folderName: folderData.folderName } : {}),
+                        }
+                        : c
+                ),
+            })),
+
             // Sincronización bidireccional (PC ↔ Celular) para Ficha de Curso:
             importOrUpdateCourse: (courseData, targetId = null) => {
                 const currentCourses = get().courses
@@ -59,7 +80,14 @@ const useFPCourseStore = create(
 
                 if (targetId && currentCourses.some((c) => c.id === targetId)) {
                     set((state) => ({
-                        courses: state.courses.map((c) => (c.id === targetId ? { ...c, ...courseData, id: targetId } : c)),
+                        courses: state.courses.map((c) => (c.id === targetId ? {
+                            ...c,
+                            ...courseData,
+                            id: targetId,
+                            links: { ...(c.links || {}), ...(courseData.links || {}) },
+                            folderId: courseData.folderId || c.folderId || '',
+                            folderName: courseData.folderName || c.folderName || '',
+                        } : c)),
                     }))
                     return targetId
                 }
@@ -102,7 +130,14 @@ const useFPCourseStore = create(
                 if (existingIndex >= 0) {
                     updatedId = currentCourses[existingIndex].id
                     set((state) => ({
-                        courses: state.courses.map((c, idx) => (idx === existingIndex ? { ...c, ...courseData, id: updatedId } : c)),
+                        courses: state.courses.map((c, idx) => (idx === existingIndex ? {
+                            ...c,
+                            ...courseData,
+                            id: updatedId,
+                            links: { ...(c.links || {}), ...(courseData.links || {}) },
+                            folderId: courseData.folderId || c.folderId || '',
+                            folderName: courseData.folderName || c.folderName || '',
+                        } : c)),
                     }))
                 } else {
                     const newCourse = {
@@ -150,6 +185,9 @@ const useFPCourseStore = create(
                         ...emptyCourse(),
                         ...(match || {}),
                         ...cCourse,
+                        links: { ...(match?.links || {}), ...(cCourse.links || {}) },
+                        folderId: cCourse.folderId || match?.folderId || '',
+                        folderName: cCourse.folderName || match?.folderName || '',
                         id: match ? match.id : (cCourse.id || crypto.randomUUID()),
                     }
                 })

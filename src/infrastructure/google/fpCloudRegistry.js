@@ -105,6 +105,9 @@ export async function saveFPCloudRegistry(customPayload = null) {
                 spreadsheetId: c.spreadsheetId || currentLinks.course?.spreadsheetId || '',
                 spreadsheetUrl: c.spreadsheetUrl || currentLinks.course?.spreadsheetUrl || '',
                 googleSheetTitle: c.googleSheetTitle || currentLinks.course?.sheetTitle || '',
+                folderId: c.folderId || '',
+                folderName: c.folderName || '',
+                links: c.links || null,
             })),
             ...(customPayload || {}),
         }

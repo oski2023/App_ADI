@@ -5,13 +5,14 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
-import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud, AlertTriangle, ArrowDownAZ } from 'lucide-react'
+import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud, AlertTriangle, ArrowDownAZ, Folder, FolderSearch, CheckCircle, XCircle } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useSettingsStore from '../../core/stores/useSettingsStore'
 import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
 import { syncFPCourseSheet, readFPCourseSheet, readAllFPCourseSheets, clearFPCourseSheet, deleteFPSpreadsheetTab, buildFPCourseTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
+import { discoverFolderAndFilesForCourse } from '../../infrastructure/google/fpDriveDiscovery'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import { calculateAge } from '../../utils/dateUtils'
 import toast from 'react-hot-toast'
@@ -105,10 +106,22 @@ export default function FPCoursesPage() {
                 }
             }
 
+            let disc = null
+            try {
+                disc = await discoverFolderAndFilesForCourse(linkRes.spreadsheetId, courseData?.cursoNumero)
+            } catch (discErr) {
+                console.warn('[FPCoursesPage] Error en auto-descubrimiento al importar:', discErr)
+            }
+
             if (courseData) {
                 courseData.spreadsheetId = linkRes.spreadsheetId
                 courseData.spreadsheetUrl = newCourseLinkInput.trim()
                 courseData.googleSheetTitle = linkRes.sheetTitle || courseData.googleSheetTitle
+                if (disc?.success) {
+                    courseData.folderId = disc.folderId || ''
+                    courseData.folderName = disc.folderName || ''
+                    courseData.links = disc.links || {}
+                }
                 const newId = importOrUpdateCourse(courseData)
                 if (!courseLink) {
                     setLink('course', linkRes)
@@ -116,13 +129,23 @@ export default function FPCoursesPage() {
                 setShowNewCourseModal(false)
                 setNewCourseLinkInput('')
                 setSelectedId(newId)
-                toast.success(`Curso Nº ${courseData.cursoNumero || '—'} importado con éxito (${courseData.students?.length || 0} estudiantes)`)
+                const folderMsg = disc?.folderName ? ` (Carpeta "${disc.folderName}" detectada)` : ''
+                toast.success(`Curso Nº ${courseData.cursoNumero || '—'} importado con éxito (${courseData.students?.length || 0} estudiantes)${folderMsg}`)
                 saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
             } else {
                 const newId = addCourse({
                     spreadsheetId: linkRes.spreadsheetId,
                     spreadsheetUrl: newCourseLinkInput.trim(),
                     googleSheetTitle: linkRes.sheetTitle,
+                    folderId: disc?.folderId || '',
+                    folderName: disc?.folderName || '',
+                    links: disc?.links || {
+                        course: {
+                            spreadsheetId: linkRes.spreadsheetId,
+                            spreadsheetUrl: newCourseLinkInput.trim(),
+                            name: 'Ficha de curso',
+                        },
+                    },
                 })
                 if (!courseLink) {
                     setLink('course', linkRes)
@@ -500,19 +523,40 @@ export default function FPCoursesPage() {
             toast.success('Archivo vinculado correctamente')
 
             if (selectedId) {
+                const cur = courses.find((c) => c.id === selectedId)
+                let disc = null
+                try {
+                    disc = await discoverFolderAndFilesForCourse(result.spreadsheetId, cur?.cursoNumero)
+                } catch (discErr) {
+                    console.warn('[FPCoursesPage] Error auto-descubriendo en handleLinkAndPull:', discErr)
+                }
+
                 updateCourse(selectedId, {
                     spreadsheetId: result.spreadsheetId,
                     spreadsheetUrl: linkInput.trim(),
                     googleSheetTitle: result.sheetTitle,
+                    folderId: disc?.folderId || cur?.folderId || '',
+                    folderName: disc?.folderName || cur?.folderName || '',
+                    links: { ...(cur?.links || {}), ...(disc?.links || {}) },
                 })
                 saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
                 await executePullSingle(result.spreadsheetId, result.sheetTitle, selectedId)
             } else {
                 const coursesInSheet = await readAllFPCourseSheets(result.spreadsheetId)
                 if (coursesInSheet && coursesInSheet.length > 0) {
+                    let disc = null
+                    try {
+                        disc = await discoverFolderAndFilesForCourse(result.spreadsheetId)
+                    } catch (e) {}
+
                     coursesInSheet.forEach((c) => {
                         c.spreadsheetId = result.spreadsheetId
                         c.spreadsheetUrl = linkInput.trim()
+                        if (disc?.success) {
+                            c.folderId = disc.folderId || ''
+                            c.folderName = disc.folderName || ''
+                            c.links = disc.links || null
+                        }
                     })
                     syncAllFromCloud(coursesInSheet, result.spreadsheetId)
                     saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro en Drive:', err))
@@ -532,6 +576,44 @@ export default function FPCoursesPage() {
             }
         } finally {
             setLinking(false)
+        }
+    }
+
+    const [discovering, setDiscovering] = useState(false)
+
+    const handleDiscoverCourseFiles = async (courseToScan) => {
+        if (!courseToScan) return
+        if (!googleLinked) {
+            toast.error('Primero debés vincular tu cuenta de Google en Configuración.')
+            return
+        }
+        setDiscovering(true)
+        const toastId = toast.loading(`Buscando carpeta de Curso Nº ${courseToScan.cursoNumero || '—'} en Google Drive...`)
+        try {
+            const disc = await discoverFolderAndFilesForCourse(courseToScan.spreadsheetId || courseToScan.spreadsheetUrl, courseToScan.cursoNumero)
+            toast.dismiss(toastId)
+            if (disc.success) {
+                updateCourse(courseToScan.id, {
+                    folderId: disc.folderId || courseToScan.folderId || '',
+                    folderName: disc.folderName || courseToScan.folderName || '',
+                    links: { ...(courseToScan.links || {}), ...(disc.links || {}) },
+                })
+                saveFPCloudRegistry().catch((err) => console.warn('[FPCoursesPage] Error guardando registro:', err))
+
+                const foundTypes = Object.keys(disc.links || {})
+                toast.success(
+                    `¡Carpeta encontrada: "${disc.folderName || courseToScan.cursoNumero}"!\nSe vincularon ${foundTypes.length} archivo(s) de trabajo.`,
+                    { duration: 5000 }
+                )
+            } else {
+                toast.error(disc.error || `No se encontró la carpeta en Drive para el curso Nº ${courseToScan.cursoNumero || '—'}`)
+            }
+        } catch (err) {
+            toast.dismiss(toastId)
+            console.error('[FPCoursesPage] Error buscando carpeta:', err)
+            toast.error('Error al comunicarse con Google Drive')
+        } finally {
+            setDiscovering(false)
         }
     }
 
@@ -561,6 +643,64 @@ export default function FPCoursesPage() {
                         </Button>
                     </div>
                 </div>
+
+                {/* Carpeta y Archivos vinculados en Google Drive */}
+                <Card className="border-primary/20 bg-primary/5">
+                    <div className="px-5 py-3 border-b border-primary/10 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            <Folder className="w-4 h-4 text-primary" />
+                            <span className="text-sm font-semibold text-text-primary">
+                                Carpeta en Google Drive: {selected.folderName ? <span className="text-primary font-bold">"{selected.folderName}"</span> : <span className="text-text-muted font-normal italic">No detectada aún</span>}
+                            </span>
+                        </div>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            icon={FolderSearch}
+                            loading={discovering}
+                            disabled={discovering}
+                            onClick={() => handleDiscoverCourseFiles(selected)}
+                            title="Escanea Google Drive para detectar la carpeta del curso (ej. 397/26) y clasificar sus 4 archivos"
+                        >
+                            Detectar archivos en Drive
+                        </Button>
+                    </div>
+                    <CardBody className="py-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                            <div className={`p-2.5 rounded-lg border flex items-center justify-between ${selected.spreadsheetId || selected.links?.course ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'bg-bg-card border-border-light text-text-muted'}`}>
+                                <div className="truncate pr-1">
+                                    <p className="font-semibold truncate">Ficha de Curso</p>
+                                    <p className="text-[10px] truncate opacity-80">{selected.links?.course?.name || (selected.spreadsheetId ? 'Vinculada' : 'No vinculada')}</p>
+                                </div>
+                                {selected.spreadsheetId || selected.links?.course ? <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-text-muted/60 flex-shrink-0" />}
+                            </div>
+
+                            <div className={`p-2.5 rounded-lg border flex items-center justify-between ${selected.links?.topicAttendance ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'bg-bg-card border-border-light text-text-muted'}`}>
+                                <div className="truncate pr-1">
+                                    <p className="font-semibold truncate">Tema y Asistencia</p>
+                                    <p className="text-[10px] truncate opacity-80">{selected.links?.topicAttendance?.name || 'No detectado'}</p>
+                                </div>
+                                {selected.links?.topicAttendance ? <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-text-muted/60 flex-shrink-0" />}
+                            </div>
+
+                            <div className={`p-2.5 rounded-lg border flex items-center justify-between ${selected.links?.attendanceSheet ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'bg-bg-card border-border-light text-text-muted'}`}>
+                                <div className="truncate pr-1">
+                                    <p className="font-semibold truncate">Asistencia de Alumnos</p>
+                                    <p className="text-[10px] truncate opacity-80">{selected.links?.attendanceSheet?.name || 'No detectado'}</p>
+                                </div>
+                                {selected.links?.attendanceSheet ? <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-text-muted/60 flex-shrink-0" />}
+                            </div>
+
+                            <div className={`p-2.5 rounded-lg border flex items-center justify-between ${selected.links?.examAct ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'bg-bg-card border-border-light text-text-muted'}`}>
+                                <div className="truncate pr-1">
+                                    <p className="font-semibold truncate">Actas de Examen</p>
+                                    <p className="text-[10px] truncate opacity-80">{selected.links?.examAct?.name || 'No detectado'}</p>
+                                </div>
+                                {selected.links?.examAct ? <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-text-muted/60 flex-shrink-0" />}
+                            </div>
+                        </div>
+                    </CardBody>
+                </Card>
 
                 {/* Datos generales del curso */}
                 <Card>

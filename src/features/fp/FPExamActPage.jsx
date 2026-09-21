@@ -20,6 +20,7 @@ import {
     linkFPDocument,
 } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
+import { discoverFolderAndFilesForCourse } from '../../infrastructure/google/fpDriveDiscovery'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -182,17 +183,49 @@ export default function FPExamActPage() {
     }
 
     const handleSyncSingle = async (actToSync) => {
-        const targetSpreadsheetId = actToSync.spreadsheetId || examActLink?.spreadsheetId
-        const targetSheetTitle = actToSync.googleSheetTitle || examActLink?.sheetTitle
+        const courseForAct = courses.find((c) =>
+            (c.id && c.id === actToSync.cursoId) ||
+            (c.cursoNumero && actToSync.cursoNumero && c.cursoNumero.trim().toLowerCase() === actToSync.cursoNumero.trim().toLowerCase())
+        ) || activeCourse
+
+        let targetSpreadsheetId = actToSync.spreadsheetId || courseForAct?.links?.examAct?.spreadsheetId || examActLink?.spreadsheetId
+        let targetSheetTitle = actToSync.googleSheetTitle || courseForAct?.links?.examAct?.sheetTitle || examActLink?.sheetTitle
+
+        if (!targetSpreadsheetId && courseForAct) {
+            setSyncing(true)
+            const toastId = toast.loading('Buscando acta de examen en Drive...')
+            try {
+                const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero)
+                if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                    useFPCourseStore.getState().updateCourse(courseForAct.id, {
+                        folderId: disc.folderId || courseForAct.folderId || '',
+                        folderName: disc.folderName || courseForAct.folderName || '',
+                        links: { ...(courseForAct.links || {}), ...disc.links },
+                    })
+                    saveFPCloudRegistry().catch((err) => console.warn(err))
+                    targetSpreadsheetId = disc.links.examAct.spreadsheetId
+                    toast.success(`Archivo detectado en carpeta "${disc.folderName || courseForAct.cursoNumero}"`)
+                }
+            } catch (discErr) {
+                console.warn('[FPExamActPage] Error en auto-descubrimiento al sincronizar:', discErr)
+            } finally {
+                toast.dismiss(toastId)
+                setSyncing(false)
+            }
+        }
+
         if (!targetSpreadsheetId) {
             setShowLinkModal(true)
             return
         }
+
         setSyncing(true)
         try {
             const res = await syncFPExamActSheet(targetSpreadsheetId, targetSheetTitle, actToSync)
             if (res?.sheetTitle && res.sheetTitle !== actToSync.googleSheetTitle) {
                 updateAct(actToSync.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
+            } else if (!actToSync.spreadsheetId) {
+                updateAct(actToSync.id, { spreadsheetId: targetSpreadsheetId })
             }
             toast.success(`"${actToSync.especialidad || 'Acta'}" sincronizada con Google Sheets`)
             saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
@@ -208,13 +241,6 @@ export default function FPExamActPage() {
     }
 
     const handleSyncAll = async () => {
-        let activeLink = examActLink
-        if (!activeLink && !acts.some((a) => a.spreadsheetId)) {
-            const cloudRes = await autoDiscoverAndSyncCloudRegistry()
-            if (cloudRes.success) {
-                activeLink = useFPGoogleLinksStore.getState().links.examAct
-            }
-        }
         if (acts.length === 0) {
             toast.error('No tenés actas cargadas para sincronizar')
             return
@@ -223,19 +249,44 @@ export default function FPExamActPage() {
         let count = 0
         try {
             for (const a of acts) {
-                const targetSpreadsheetId = a.spreadsheetId || activeLink?.spreadsheetId
-                const targetSheetTitle = a.googleSheetTitle || activeLink?.sheetTitle
+                const courseForAct = courses.find((c) =>
+                    (c.id && c.id === a.cursoId) ||
+                    (c.cursoNumero && a.cursoNumero && c.cursoNumero.trim().toLowerCase() === a.cursoNumero.trim().toLowerCase())
+                ) || activeCourse
+
+                let targetSpreadsheetId = a.spreadsheetId || courseForAct?.links?.examAct?.spreadsheetId || examActLink?.spreadsheetId
+                let targetSheetTitle = a.googleSheetTitle || courseForAct?.links?.examAct?.sheetTitle || examActLink?.sheetTitle
+
+                if (!targetSpreadsheetId && courseForAct) {
+                    try {
+                        const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero)
+                        if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                            useFPCourseStore.getState().updateCourse(courseForAct.id, {
+                                folderId: disc.folderId || courseForAct.folderId || '',
+                                folderName: disc.folderName || courseForAct.folderName || '',
+                                links: { ...(courseForAct.links || {}), ...disc.links },
+                            })
+                            targetSpreadsheetId = disc.links.examAct.spreadsheetId
+                        }
+                    } catch (e) {}
+                }
+
                 if (!targetSpreadsheetId) continue
+
                 const res = await syncFPExamActSheet(targetSpreadsheetId, targetSheetTitle, a)
                 if (res?.sheetTitle && res.sheetTitle !== a.googleSheetTitle) {
                     updateAct(a.id, { googleSheetTitle: res.sheetTitle, spreadsheetId: targetSpreadsheetId })
+                } else if (!a.spreadsheetId) {
+                    updateAct(a.id, { spreadsheetId: targetSpreadsheetId })
                 }
                 count++
             }
-            if (count === 0 && !activeLink) {
+
+            if (count === 0 && !examActLink) {
                 setShowLinkModal(true)
                 return
             }
+
             toast.success(`${count} acta(s) sincronizada(s) con Google Sheets`)
             saveFPCloudRegistry().catch((err) => console.warn('[FPExamActPage] Error guardando registro en Drive:', err))
         } catch (error) {
@@ -250,17 +301,31 @@ export default function FPExamActPage() {
     }
 
     const handleSyncGeneral = async () => {
-        let hasAnyLink = acts.some((a) => a.spreadsheetId) || examActLink
+        const hasAnyLink = acts.some((a) => a.spreadsheetId) ||
+            courses.some((c) => c.links?.examAct?.spreadsheetId) ||
+            examActLink
+
         if (!hasAnyLink) {
-            const cloudRes = await autoDiscoverAndSyncCloudRegistry()
-            if (cloudRes.success) {
-                hasAnyLink = true
+            if (activeCourse) {
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                    useFPCourseStore.getState().updateCourse(activeCourse.id, {
+                        folderId: disc.folderId || activeCourse.folderId || '',
+                        folderName: disc.folderName || activeCourse.folderName || '',
+                        links: { ...(activeCourse.links || {}), ...disc.links },
+                    })
+                    saveFPCloudRegistry().catch((err) => console.warn(err))
+                    toast.success(`Archivo detectado en carpeta "${disc.folderName || activeCourse.cursoNumero}"`)
+                } else {
+                    setShowLinkModal(true)
+                    return
+                }
+            } else {
+                setShowLinkModal(true)
+                return
             }
         }
-        if (!hasAnyLink) {
-            setShowLinkModal(true)
-            return
-        }
+
         if (acts.length === 0) {
             toast.error('No tenés actas cargadas para sincronizar')
             return
@@ -307,44 +372,101 @@ export default function FPExamActPage() {
     }
 
     const handlePullFromSheets = async (targetActId = null) => {
-        let targetAct = targetActId ? acts.find((a) => a.id === targetActId) : null
-        let targetSpreadsheetId = targetAct?.spreadsheetId || examActLink?.spreadsheetId
-        let targetSheetTitle = targetAct?.googleSheetTitle || examActLink?.sheetTitle
+        if (targetActId) {
+            const current = acts.find((a) => a.id === targetActId)
+            const courseForAct = courses.find((c) =>
+                (c.id && c.id === current?.cursoId) ||
+                (c.cursoNumero && current?.cursoNumero && c.cursoNumero.trim().toLowerCase() === current.cursoNumero.trim().toLowerCase())
+            ) || activeCourse
 
-        if (!targetSpreadsheetId) {
-            setPulling(true)
-            const toastId = toast.loading('Buscando vínculos en Google Drive...')
-            try {
-                const cloudRes = await autoDiscoverAndSyncCloudRegistry()
-                toast.dismiss(toastId)
-                if (cloudRes.success) {
-                    const freshExamLink = useFPGoogleLinksStore.getState().links.examAct
-                    const freshCourses = useFPCourseStore.getState().courses
-                    targetSpreadsheetId = targetAct?.spreadsheetId || freshExamLink?.spreadsheetId
-                    targetSheetTitle = targetAct?.googleSheetTitle || freshExamLink?.sheetTitle
-                    if (targetSpreadsheetId) {
-                        toast.success('¡Vínculo detectado automáticamente desde Google Drive!')
+            let targetSpreadsheetId = current?.spreadsheetId || courseForAct?.links?.examAct?.spreadsheetId || examActLink?.spreadsheetId
+            let targetSheetTitle = current?.googleSheetTitle || courseForAct?.links?.examAct?.sheetTitle || examActLink?.sheetTitle
+
+            if (!targetSpreadsheetId && courseForAct) {
+                setPulling(true)
+                const toastId = toast.loading('Buscando acta de examen en Drive...')
+                try {
+                    const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero)
+                    if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                        useFPCourseStore.getState().updateCourse(courseForAct.id, {
+                            folderId: disc.folderId || courseForAct.folderId || '',
+                            folderName: disc.folderName || courseForAct.folderName || '',
+                            links: { ...(courseForAct.links || {}), ...disc.links },
+                        })
+                        saveFPCloudRegistry().catch((err) => console.warn(err))
+                        targetSpreadsheetId = disc.links.examAct.spreadsheetId
+                        toast.success(`Archivo detectado en carpeta "${disc.folderName || courseForAct.cursoNumero}"`)
                     }
+                } catch (e) {
+                    console.warn(e)
+                } finally {
+                    toast.dismiss(toastId)
+                    setPulling(false)
                 }
-            } catch (err) {
-                toast.dismiss(toastId)
-                console.warn('[FPExamActPage] Error buscando en Drive:', err)
-            } finally {
-                setPulling(false)
             }
+
+            if (!targetSpreadsheetId) {
+                setShowLinkModal(true)
+                return
+            }
+
+            const confirmMsg = 'Esto va a recargar los datos de esta acta desde Google Sheets. ¿Continuar?'
+            if (!window.confirm(confirmMsg)) return
+            await executePull(targetSpreadsheetId, targetSheetTitle, targetActId)
+            return
         }
 
-        if (!targetSpreadsheetId) {
+        // Pull general de todas las actas
+        setPulling(true)
+        const toastId = toast.loading('Buscando actas de examen en Google Drive...')
+        try {
+            await autoDiscoverAndSyncCloudRegistry()
+        } catch (e) {
+            console.warn(e)
+        } finally {
+            toast.dismiss(toastId)
+            setPulling(false)
+        }
+
+        const freshCourses = useFPCourseStore.getState().courses
+        const freshExamLink = useFPGoogleLinksStore.getState().links.examAct
+        const spreadsheetsMap = new Map()
+
+        if (freshExamLink?.spreadsheetId) {
+            spreadsheetsMap.set(freshExamLink.spreadsheetId, {
+                spreadsheetId: freshExamLink.spreadsheetId,
+                sheetTitle: freshExamLink.sheetTitle,
+            })
+        }
+        freshCourses.forEach((c) => {
+            if (c.links?.examAct?.spreadsheetId) {
+                spreadsheetsMap.set(c.links.examAct.spreadsheetId, {
+                    spreadsheetId: c.links.examAct.spreadsheetId,
+                    sheetTitle: c.links.examAct.name || '',
+                })
+            }
+        })
+        acts.forEach((a) => {
+            if (a.spreadsheetId) {
+                spreadsheetsMap.set(a.spreadsheetId, {
+                    spreadsheetId: a.spreadsheetId,
+                    sheetTitle: a.googleSheetTitle || '',
+                })
+            }
+        })
+
+        const uniqueSpreadsheets = Array.from(spreadsheetsMap.values())
+        if (uniqueSpreadsheets.length === 0) {
             setShowLinkModal(true)
             return
         }
-        const confirmMsg = targetActId
-            ? 'Esto va a recargar los datos de esta acta desde Google Sheets. ¿Continuar?'
-            : 'Esto va a sincronizar este dispositivo con Google Sheets. Las actas quedarán exactamente iguales a las de la nube. ¿Continuar?'
-        if (!window.confirm(confirmMsg)) {
-            return
+
+        const confirmMsg = `Esto va a sincronizar este dispositivo con Google Sheets (${uniqueSpreadsheets.length} archivo(s)). ¿Continuar?`
+        if (!window.confirm(confirmMsg)) return
+
+        for (const sItem of uniqueSpreadsheets) {
+            await executePull(sItem.spreadsheetId, sItem.sheetTitle)
         }
-        executePull(targetSpreadsheetId, targetSheetTitle, targetActId)
     }
 
     const handleLinkAndPull = async () => {
@@ -355,7 +477,30 @@ export default function FPExamActPage() {
         setLinking(true)
         try {
             const result = await linkFPDocument(linkInput.trim())
+            if (!result) {
+                toast.error('No se pudo interpretar el archivo de Google Sheets')
+                return
+            }
             setLink('examAct', result)
+
+            const courseForLink = activeCourse
+            if (courseForLink) {
+                useFPCourseStore.getState().updateCourse(courseForLink.id, {
+                    links: {
+                        ...(courseForLink.links || {}),
+                        examAct: {
+                            spreadsheetId: result.spreadsheetId,
+                            spreadsheetUrl: linkInput.trim(),
+                            name: 'Acta de examen',
+                        },
+                    },
+                })
+            }
+
+            if (selectedId) {
+                updateAct(selectedId, { spreadsheetId: result.spreadsheetId, googleSheetTitle: result.sheetTitle })
+            }
+
             setShowLinkModal(false)
             setLinkInput('')
             toast.success('Archivo vinculado correctamente')
@@ -874,22 +1019,48 @@ export default function FPExamActPage() {
                                 setLinking(true)
                                 const toastId = toast.loading('Buscando en Google Drive...')
                                 try {
+                                    const course = activeCourse
+                                    let found = false
+                                    if (course) {
+                                        const disc = await discoverFolderAndFilesForCourse(course.spreadsheetId || course.spreadsheetUrl, course.cursoNumero)
+                                        if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                                            useFPCourseStore.getState().updateCourse(course.id, {
+                                                folderId: disc.folderId || course.folderId || '',
+                                                folderName: disc.folderName || course.folderName || '',
+                                                links: { ...(course.links || {}), ...disc.links },
+                                            })
+                                            saveFPCloudRegistry().catch((err) => console.warn(err))
+                                            toast.success(`¡Archivo detectado en carpeta "${disc.folderName || course.cursoNumero}"!`)
+                                            setShowLinkModal(false)
+                                            found = true
+                                            if (selectedId) {
+                                                updateAct(selectedId, { spreadsheetId: disc.links.examAct.spreadsheetId })
+                                            }
+                                            await executePull(disc.links.examAct.spreadsheetId, disc.links.examAct.name || '', selectedId)
+                                            return
+                                        }
+                                    }
+
                                     const res = await autoDiscoverAndSyncCloudRegistry()
-                                    toast.dismiss(toastId)
                                     if (res.success) {
-                                        toast.success('¡Vínculos detectados desde Drive!')
-                                        setShowLinkModal(false)
                                         const freshLink = useFPGoogleLinksStore.getState().links.examAct
                                         if (freshLink?.spreadsheetId) {
-                                            executePull(freshLink.spreadsheetId, freshLink.sheetTitle)
+                                            toast.success('¡Vínculo detectado desde Drive!')
+                                            setShowLinkModal(false)
+                                            found = true
+                                            await executePull(freshLink.spreadsheetId, freshLink.sheetTitle, selectedId)
+                                            return
                                         }
-                                    } else {
-                                        toast.error('No se encontraron vínculos guardados en Google Drive')
+                                    }
+
+                                    if (!found) {
+                                        toast.error('No se encontró el archivo de Acta de Examen en Drive. Podés pegar el link arriba.')
                                     }
                                 } catch (e) {
-                                    toast.dismiss(toastId)
+                                    console.error('[FPExamActPage] Error buscando en Drive:', e)
                                     toast.error('Error buscando en Drive')
                                 } finally {
+                                    toast.dismiss(toastId)
                                     setLinking(false)
                                 }
                             }}
