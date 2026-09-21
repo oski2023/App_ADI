@@ -56,6 +56,13 @@ export default function FPExamActPage() {
     const [selectedId, setSelectedId] = useState(null)
     const selected = acts.find((a) => a.id === selectedId)
     const attendanceSheets = useFPAttendanceSheetStore((s) => s.sheets)
+    const pendingUpdates = useFPUpdateAlertStore((s) => s.pendingUpdates)
+    const hasExamAlertForSelected = selected
+        ? Boolean(
+            (selected.cursoId && pendingUpdates[selected.cursoId]?.exam) ||
+            (selected.cursoNumero && Object.values(pendingUpdates || {}).some((u) => u.exam && u.cursoNumero && u.cursoNumero.trim().toLowerCase() === selected.cursoNumero.trim().toLowerCase()))
+        )
+        : false
 
     const examActLink = useFPGoogleLinksStore((s) => s.links.examAct)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
@@ -509,7 +516,7 @@ export default function FPExamActPage() {
                 </Card>
 
                 {/* Banner recordatorio si se agregaron alumnos en Ficha de Curso */}
-                {useFPUpdateAlertStore((st) => st.hasExamAlert(selected?.cursoId, selected?.cursoNumero)) && (
+                {hasExamAlertForSelected && (
                     <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4 animate-fade-in shadow-sm">
                         <div className="flex items-center gap-3">
                             <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">

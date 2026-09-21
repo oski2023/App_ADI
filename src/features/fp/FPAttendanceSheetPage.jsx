@@ -65,6 +65,13 @@ export default function FPAttendanceSheetPage() {
     const selected = sheets.find((s) => s.id === selectedId)
     const attendanceLink = useFPGoogleLinksStore((s) => s.links.attendanceSheet)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
+    const pendingUpdates = useFPUpdateAlertStore((s) => s.pendingUpdates)
+    const hasAttendanceAlertForSelected = selected
+        ? Boolean(
+            (selected.cursoId && pendingUpdates[selected.cursoId]?.attendance) ||
+            (selected.cursoNumero && Object.values(pendingUpdates || {}).some((u) => u.attendance && u.cursoNumero && u.cursoNumero.trim().toLowerCase() === selected.cursoNumero.trim().toLowerCase()))
+        )
+        : false
 
     const [showAddBajaModal, setShowAddBajaModal] = useState(false)
     const [bajaStudentId, setBajaStudentId] = useState('')
@@ -496,7 +503,7 @@ export default function FPAttendanceSheetPage() {
                 </Card>
 
                 {/* Banner recordatorio si se agregaron alumnos en Ficha de Curso */}
-                {useFPUpdateAlertStore((st) => st.hasAttendanceAlert(selected?.cursoId, selected?.cursoNumero)) && (
+                {hasAttendanceAlertForSelected && (
                     <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-4 animate-fade-in shadow-sm">
                         <div className="flex items-center gap-3">
                             <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 shrink-0">

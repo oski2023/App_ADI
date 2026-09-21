@@ -43,6 +43,10 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClo
     const profileType = useSettingsStore((s) => s.profileType)
     const navItems = profileType === 'fp' ? navItemsFP : navItemsEscuela
 
+    const pendingUpdates = useFPUpdateAlertStore((s) => s.pendingUpdates)
+    const hasAttendancePending = Object.values(pendingUpdates || {}).some((u) => u.attendance)
+    const hasExamPending = Object.values(pendingUpdates || {}).some((u) => u.exam)
+
     const isExpanded = !collapsed || isMobileOpen
 
     // Configuración del indicador de estado
@@ -121,10 +125,10 @@ export default function Sidebar({ collapsed, onToggle, isMobileOpen, onMobileClo
                         >
                             <Icon className="w-5 h-5 shrink-0" />
                             {isExpanded && <span className="truncate flex-1">{label}</span>}
-                            {path === '/fp/attendance-sheet' && Object.values(useFPUpdateAlertStore.getState().pendingUpdates || {}).some((u) => u.attendance) && (
+                            {path === '/fp/attendance-sheet' && hasAttendancePending && (
                                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0 ring-2 ring-amber-500/20" title="Alumnos pendientes de actualizar desde Ficha de Curso" />
                             )}
-                            {path === '/fp/exam-act' && Object.values(useFPUpdateAlertStore.getState().pendingUpdates || {}).some((u) => u.exam) && (
+                            {path === '/fp/exam-act' && hasExamPending && (
                                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0 ring-2 ring-amber-500/20" title="Estudiantes pendientes de actualizar desde Ficha de Curso" />
                             )}
                         </NavLink>

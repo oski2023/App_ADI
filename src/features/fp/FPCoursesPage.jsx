@@ -44,6 +44,10 @@ export default function FPCoursesPage() {
     const selected = courses.find((c) => c.id === selectedId)
     const courseLink = useFPGoogleLinksStore((s) => s.links.course)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
+    const pendingUpdates = useFPUpdateAlertStore((s) => s.pendingUpdates)
+    const hasAlertForSelected = selected
+        ? Boolean(pendingUpdates[selected.id]?.attendance || pendingUpdates[selected.id]?.exam)
+        : false
 
     const [syncing, setSyncing] = useState(false)
     const [pulling, setPulling] = useState(false)
@@ -481,7 +485,7 @@ export default function FPCoursesPage() {
                         </Button>
                     </div>
 
-                    {useFPUpdateAlertStore((st) => st.hasAttendanceAlert(selected.id, selected.cursoNumero) || st.hasExamAlert(selected.id, selected.cursoNumero)) && (
+                    {hasAlertForSelected && (
                         <div className="mx-5 mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-800 dark:text-amber-200 animate-fade-in">
                             <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
                             <span>
