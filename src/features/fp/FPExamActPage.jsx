@@ -344,11 +344,36 @@ export default function FPExamActPage() {
             if (targetActId) {
                 const current = acts.find((a) => a.id === targetActId)
                 const tabTitle = current?.googleSheetTitle || sheetTitle
-                const data = await readFPExamActSheet(spreadsheetId, tabTitle)
-                if (!data) {
-                    toast.error('No se pudieron leer los datos del acta')
+                let data = null
+                let notFound = false
+
+                try {
+                    data = await readFPExamActSheet(spreadsheetId, tabTitle)
+                } catch (readErr) {
+                    if (isAuthError(readErr)) throw readErr
+                    const errMsg = (readErr?.message || readErr?.result?.error?.message || '').toLowerCase()
+                    const is400 = readErr?.status === 400 || readErr?.result?.error?.code === 400
+                    if (is400 || errMsg.includes('unable to parse range') || errMsg.includes('not found')) {
+                        notFound = true
+                    } else {
+                        throw readErr
+                    }
+                }
+
+                if (notFound || !data) {
+                    deleteAct(targetActId)
+                    const allActs = await readAllFPExamActSheets(spreadsheetId).catch(() => [])
+                    if (allActs && allActs.length > 0) {
+                        syncAllFromCloud(allActs, spreadsheetId, activeCourse?.cursoNumero)
+                    }
+                    saveFPCloudRegistry().catch((err) => console.warn(err))
+                    toast(`El acta "${tabTitle || 'Acta de Examen'}" no existe en Google Drive (fue eliminada). Se actualizó la app.`, {
+                        icon: 'ℹ️',
+                        duration: 5000,
+                    })
                     return
                 }
+
                 const updatedId = importOrUpdateAct(data, targetActId)
                 setSelectedId(updatedId)
                 toast.success(`Acta traída desde Google Sheets (${data.students?.length || 0} estudiantes)`)

@@ -269,11 +269,21 @@ function sanitizeSheetTabTitle(rawTitle, fallback = 'Planilla') {
     return clean
 }
 
+// Escapa el nombre de pestaña para usar de manera segura en rangos A1 de la API de Google Sheets
+export function escapeSheetTitle(title) {
+    if (!title) return ''
+    const clean = String(title).trim()
+    if (clean.startsWith("'") && clean.endsWith("'")) return clean
+    return `'${clean.replace(/'/g, "''")}'`
+}
+
 export function buildFPAttendanceTabTitle(sheet) {
+    if (sheet.informeMes?.trim()) {
+        return sanitizeSheetTabTitle(sheet.informeMes.trim().toUpperCase(), 'Asistencia')
+    }
     const parts = []
     if (sheet.cursoNumero) parts.push(`Curso ${sheet.cursoNumero}`)
     if (sheet.especialidad) parts.push(sheet.especialidad)
-    if (sheet.informeMes) parts.push(sheet.informeMes)
     return sanitizeSheetTabTitle(parts.join(' - '), 'Asistencia')
 }
 
@@ -516,7 +526,7 @@ export async function readFPCourseSheet(spreadsheetId, sheetTitle) {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetTitle}!A1:V50`,
+            range: `${escapeSheetTitle(sheetTitle)}!A1:V50`,
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
@@ -540,7 +550,7 @@ export async function readAllFPCourseSheets(spreadsheetId) {
         const tabs = info.result.sheets || []
         if (tabs.length === 0) return []
 
-        const ranges = tabs.map((t) => `${t.properties.title}!A1:V50`)
+        const ranges = tabs.map((t) => `${escapeSheetTitle(t.properties.title)}!A1:V50`)
         const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
             spreadsheetId,
             ranges,
@@ -585,7 +595,7 @@ export async function syncFPCourseSheet(spreadsheetId, sheetTitle, course) {
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(effectiveSheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_COURSE_CELL_MAP).forEach(([field, cell]) => pushCell(cell, course[field]))
         Object.entries(FP_COURSE_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, course.horarios[dia]))
@@ -632,7 +642,7 @@ export async function clearFPCourseSheet(spreadsheetId, sheetTitle) {
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(sheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.values(FP_COURSE_CELL_MAP).forEach((cell) => pushCell(cell, ''))
         Object.values(FP_COURSE_HORARIO_CELLS).forEach((cell) => pushCell(cell, ''))
@@ -688,7 +698,7 @@ export async function syncFPTopicAttendanceSheet(spreadsheetId, sheetTitle, shee
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(effectiveSheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_TOPIC_CELL_MAP).forEach(([field, cell]) => pushCell(cell, sheet[field]))
         Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, sheet.horarios[dia]))
@@ -722,7 +732,7 @@ export async function clearFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(sheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.values(FP_TOPIC_CELL_MAP).forEach((cell) => pushCell(cell, ''))
         Object.values(FP_TOPIC_HORARIO_CELLS).forEach((cell) => pushCell(cell, ''))
@@ -793,7 +803,7 @@ export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetTitle}!A1:P60`,
+            range: `${escapeSheetTitle(sheetTitle)}!A1:P60`,
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
@@ -813,7 +823,7 @@ export async function readAllFPTopicAttendanceSheets(spreadsheetId) {
         const tabs = info.result.sheets || []
         if (tabs.length === 0) return []
 
-        const ranges = tabs.map((t) => `${t.properties.title}!A1:P60`)
+        const ranges = tabs.map((t) => `${escapeSheetTitle(t.properties.title)}!A1:P60`)
         const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
             spreadsheetId,
             ranges,
@@ -880,7 +890,7 @@ export async function syncFPAttendanceSheet(spreadsheetId, sheetTitle, sheet) {
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(effectiveSheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_ATTENDANCE_CELL_MAP).forEach(([field, cell]) => pushCell(cell, sheet[field]))
         Object.entries(FP_ATTENDANCE_HORARIO_CELLS).forEach(([dia, cell]) => pushCell(cell, sheet.horarios[dia]))
@@ -952,7 +962,7 @@ export async function clearFPAttendanceSheet(spreadsheetId, sheetTitle) {
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${sheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(sheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.values(FP_ATTENDANCE_CELL_MAP).forEach((cell) => pushCell(cell, ''))
         Object.values(FP_ATTENDANCE_HORARIO_CELLS).forEach((cell) => pushCell(cell, ''))
@@ -1060,11 +1070,15 @@ export async function readFPAttendanceSheet(spreadsheetId, sheetTitle) {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetTitle}!A1:AO50`,
+            range: `${escapeSheetTitle(sheetTitle)}!A1:AO50`,
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
-        return parseFPAttendanceGrid(rows, sheetTitle)
+        const parsed = parseFPAttendanceGrid(rows, sheetTitle)
+        if (!parsed.informeMes && sheetTitle) {
+            parsed.informeMes = sheetTitle
+        }
+        return parsed
     } catch (error) {
         console.error('[SheetsService] Error al leer Asistencia de Alumnos:', error)
         throw error
@@ -1080,7 +1094,7 @@ export async function readAllFPAttendanceSheets(spreadsheetId) {
         const tabs = info.result.sheets || []
         if (tabs.length === 0) return []
 
-        const ranges = tabs.map((t) => `${t.properties.title}!A1:AO50`)
+        const ranges = tabs.map((t) => `${escapeSheetTitle(t.properties.title)}!A1:AO50`)
         const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
             spreadsheetId,
             ranges,
@@ -1094,10 +1108,15 @@ export async function readAllFPAttendanceSheets(spreadsheetId) {
             const rows = vr.values || []
             const parsed = parseFPAttendanceGrid(rows, tabTitle)
 
+            if (!parsed.informeMes && tabTitle) {
+                parsed.informeMes = tabTitle
+            }
+
             const hasData =
                 Boolean(parsed.cursoNumero?.trim()) ||
                 Boolean(parsed.especialidad?.trim()) ||
                 Boolean(parsed.centroNumero?.trim()) ||
+                Boolean(parsed.informeMes?.trim()) ||
                 parsed.students.length > 0
 
             if (hasData || tabs.length === 1) {
@@ -1153,7 +1172,7 @@ export async function syncFPExamActSheet(spreadsheetId, sheetTitle, act) {
 
     try {
         const data = []
-        const pushCell = (cell, value) => data.push({ range: `${effectiveSheetTitle}!${cell}`, values: [[value ?? '']] })
+        const pushCell = (cell, value) => data.push({ range: `${escapeSheetTitle(effectiveSheetTitle)}!${cell}`, values: [[value ?? '']] })
 
         Object.entries(FP_EXAM_ACT_CELL_MAP).forEach(([field, cell]) => pushCell(cell, act[field]))
         Object.entries(FP_EXAM_ACT_RESUMEN_CELLS).forEach(([campo, cell]) => pushCell(cell, act.resumen[campo]))
@@ -1210,7 +1229,7 @@ export async function readFPExamActSheet(spreadsheetId, sheetTitle) {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetTitle}!A1:U50`,
+            range: `${escapeSheetTitle(sheetTitle)}!A1:U50`,
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
@@ -1229,7 +1248,7 @@ export async function readAllFPExamActSheets(spreadsheetId) {
         const tabs = info.result.sheets || []
         if (tabs.length === 0) return []
 
-        const ranges = tabs.map((t) => `${t.properties.title}!A1:U50`)
+        const ranges = tabs.map((t) => `${escapeSheetTitle(t.properties.title)}!A1:U50`)
         const batchResponse = await gapi.client.sheets.spreadsheets.values.batchGet({
             spreadsheetId,
             ranges,
@@ -1266,7 +1285,7 @@ export async function readFPRows(spreadsheetId, sheetTitle, range = 'A2:Z') {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetTitle}!${range}`,
+            range: `${escapeSheetTitle(sheetTitle)}!${range}`,
         })
         return response.result.values || []
     } catch (error) {
@@ -1283,14 +1302,14 @@ export async function syncFPAdminRecords(spreadsheetId, sheetTitle, records) {
         // Limpiar filas de datos existentes (conserva la fila 1 de encabezados)
         await gapi.client.sheets.spreadsheets.values.clear({
             spreadsheetId,
-            range: `${sheetTitle}!A2:Z`,
+            range: `${escapeSheetTitle(sheetTitle)}!A2:Z`,
         })
 
         if (records.length > 0) {
             const rows = records.map((r) => [r.id, r.mes, r.documento, r.cohorte, r.cantidad, r.estado, r.link || ''])
             await gapi.client.sheets.spreadsheets.values.append({
                 spreadsheetId,
-                range: `${sheetTitle}!A1`,
+                range: `${escapeSheetTitle(sheetTitle)}!A1`,
                 valueInputOption: 'RAW',
                 resource: { values: rows },
             })
@@ -1309,7 +1328,7 @@ export async function readSheet(sheetName, range = 'A:Z') {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.get({
             spreadsheetId,
-            range: `${sheetName}!${range}`,
+            range: `${escapeSheetTitle(sheetName)}!${range}`,
         })
         return response.result.values || []
     } catch (error) {
@@ -1325,7 +1344,7 @@ export async function appendRows(sheetName, values) {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.append({
             spreadsheetId,
-            range: `${sheetName}!A1`,
+            range: `${escapeSheetTitle(sheetName)}!A1`,
             valueInputOption: 'RAW',
             resource: { values },
         })
@@ -1343,7 +1362,7 @@ export async function updateRows(sheetName, range, values) {
     try {
         const response = await gapi.client.sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: `${sheetName}!${range}`,
+            range: `${escapeSheetTitle(sheetName)}!${range}`,
             valueInputOption: 'RAW',
             resource: { values },
         })

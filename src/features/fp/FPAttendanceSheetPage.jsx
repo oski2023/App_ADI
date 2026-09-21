@@ -102,6 +102,11 @@ export default function FPAttendanceSheetPage() {
             temasTratados: '',
         }))
 
+        // Calcular el próximo mes sugerido según las pestañas ya existentes
+        const mesesNombres = ['Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre', 'Enero', 'Febrero']
+        const existingMeses = filteredSheets.map((s) => (s.informeMes || s.googleSheetTitle || '').trim().toLowerCase())
+        const nextMonth = mesesNombres.find((m) => !existingMeses.includes(m.toLowerCase())) || 'Nuevo Mes'
+
         const newId = addSheet({
             cursoId: activeCourse.id,
             centroNumero: activeCourse.cfpNumero || '',
@@ -113,8 +118,9 @@ export default function FPAttendanceSheetPage() {
             localidad: '',
             horarios: activeCourse.horarios ? { ...activeCourse.horarios } : undefined,
             students: initialStudents,
-            informeMes: '',
+            informeMes: nextMonth,
             informeAnio: new Date().getFullYear().toString(),
+            googleSheetTitle: nextMonth.toUpperCase(),
             movimiento: {
                 totalInicioMes: initialStudents.length > 0 ? String(initialStudents.length) : '',
                 altas: '',
@@ -125,7 +131,7 @@ export default function FPAttendanceSheetPage() {
             },
         })
         setSelectedId(newId)
-        toast.success(`Nueva planilla de asistencia para Curso Nº ${activeCourse.cursoNumero || '—'} (${initialStudents.length} alumnos heredados)`)
+        toast.success(`Nueva pestaña "${nextMonth.toUpperCase()}" para Curso Nº ${activeCourse.cursoNumero || '—'} (${initialStudents.length} alumnos)`)
     }
 
     // Alumnos del curso: reúne los alumnos cargados en la planilla y los de la Ficha de Curso correspondiente
@@ -424,11 +430,37 @@ export default function FPAttendanceSheetPage() {
             if (targetSheetId) {
                 const current = sheets.find((s) => s.id === targetSheetId)
                 const tabTitle = current?.googleSheetTitle || sheetTitle
-                const data = await readFPAttendanceSheet(spreadsheetId, tabTitle)
-                if (!data) {
-                    toast.error('No se pudieron leer los datos de asistencia')
+                let data = null
+                let notFound = false
+
+                try {
+                    data = await readFPAttendanceSheet(spreadsheetId, tabTitle)
+                } catch (readErr) {
+                    if (isAuthError(readErr)) throw readErr
+                    const errMsg = (readErr?.message || readErr?.result?.error?.message || '').toLowerCase()
+                    const is400 = readErr?.status === 400 || readErr?.result?.error?.code === 400
+                    if (is400 || errMsg.includes('unable to parse range') || errMsg.includes('not found')) {
+                        notFound = true
+                    } else {
+                        throw readErr
+                    }
+                }
+
+                if (notFound || !data) {
+                    // La pestaña fue eliminada en Google Sheets.
+                    deleteSheet(targetSheetId)
+                    const allSheets = await readAllFPAttendanceSheets(spreadsheetId).catch(() => [])
+                    if (allSheets && allSheets.length > 0) {
+                        syncAllFromCloud(allSheets, spreadsheetId, activeCourse?.cursoNumero)
+                    }
+                    saveFPCloudRegistry().catch((err) => console.warn(err))
+                    toast(`La pestaña "${tabTitle || 'Asistencia'}" no existe en Google Drive (fue eliminada). Se actualizó la app.`, {
+                        icon: 'ℹ️',
+                        duration: 5000,
+                    })
                     return
                 }
+
                 const updatedId = importOrUpdateSheet(data, targetSheetId)
                 setSelectedId(updatedId)
                 toast.success(`Asistencia traída desde Google Sheets (${data.students.length} alumnos)`)
@@ -439,7 +471,7 @@ export default function FPAttendanceSheetPage() {
                     return
                 }
                 syncAllFromCloud(allSheets, spreadsheetId, activeCourse?.cursoNumero)
-                toast.success(`Se sincronizaron ${allSheets.length} planilla(s) desde Google Sheets`)
+                toast.success(`Se sincronizaron ${allSheets.length} pestaña(s) desde Google Sheets`)
             }
         } catch (error) {
             if (isAuthError(error)) {
@@ -497,7 +529,46 @@ export default function FPAttendanceSheetPage() {
             return
         }
 
-        // Pull general de todas las planillas
+        // Pull de las pestañas del curso activo (o general si se seleccionó 'ALL')
+        if (activeCourse && selectedCourseId !== 'ALL') {
+            let targetSpreadsheetId = activeCourse.links?.attendanceSheet?.spreadsheetId || attendanceLink?.spreadsheetId
+            let targetSheetTitle = activeCourse.links?.attendanceSheet?.sheetTitle || attendanceLink?.sheetTitle
+
+            if (!targetSpreadsheetId) {
+                setPulling(true)
+                const toastId = toast.loading('Buscando archivo de Asistencia en Drive...')
+                try {
+                    const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                    if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
+                        useFPCourseStore.getState().updateCourse(activeCourse.id, {
+                            folderId: disc.folderId || activeCourse.folderId || '',
+                            folderName: disc.folderName || activeCourse.folderName || '',
+                            links: { ...(activeCourse.links || {}), ...disc.links },
+                        })
+                        saveFPCloudRegistry().catch((err) => console.warn(err))
+                        targetSpreadsheetId = disc.links.attendanceSheet.spreadsheetId
+                        toast.success(`Archivo detectado en carpeta "${disc.folderName || activeCourse.cursoNumero}"`)
+                    }
+                } catch (e) {
+                    console.warn(e)
+                } finally {
+                    toast.dismiss(toastId)
+                    setPulling(false)
+                }
+            }
+
+            if (!targetSpreadsheetId) {
+                setShowLinkModal(true)
+                return
+            }
+
+            const confirmMsg = `Esto va a sincronizar las pestañas de asistencia del Curso Nº ${activeCourse.cursoNumero || '—'} con Google Sheets. ¿Continuar?`
+            if (!window.confirm(confirmMsg)) return
+            await executePull(targetSpreadsheetId, targetSheetTitle, null)
+            return
+        }
+
+        // Pull general de todas las planillas (modo ALL)
         setPulling(true)
         const toastId = toast.loading('Buscando planillas de Asistencia en Google Drive...')
         try {
@@ -546,7 +617,7 @@ export default function FPAttendanceSheetPage() {
         if (!window.confirm(confirmMsg)) return
 
         for (const sItem of uniqueSpreadsheets) {
-            await executePull(sItem.spreadsheetId, sItem.sheetTitle)
+            await executePull(sItem.spreadsheetId, sItem.sheetTitle, null)
         }
     }
 
@@ -617,7 +688,7 @@ export default function FPAttendanceSheetPage() {
                         icon={CloudDownload}
                         loading={pulling}
                         disabled={pulling || syncing}
-                        onClick={() => handlePullFromSheets(selected?.id || null)}
+                        onClick={() => handlePullFromSheets(null)}
                         title="Descarga la planilla de asistencia desde Google Sheets hacia este dispositivo"
                     >
                         Traer de Google Sheets

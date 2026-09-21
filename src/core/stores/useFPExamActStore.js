@@ -136,13 +136,12 @@ const useFPExamActStore = create(
 
                 let finalActs = []
                 if (targetSpreadsheetId) {
-                    const actsFromOtherSheets = currentActs.filter(
-                        (a) => a.spreadsheetId && a.spreadsheetId !== targetSpreadsheetId
-                    )
-                    const otherCoursesActs = currentActs.filter(
-                        (a) => !a.spreadsheetId && targetCursoNumero && a.cursoNumero && a.cursoNumero.trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
-                    )
-                    finalActs = [...actsFromOtherSheets, ...otherCoursesActs, ...matchedCloudActs]
+                    const actsFromOtherSheets = currentActs.filter((a) => {
+                        if (a.spreadsheetId && a.spreadsheetId === targetSpreadsheetId) return false
+                        if (targetCursoNumero && a.cursoNumero && a.cursoNumero.trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        return true
+                    })
+                    finalActs = [...actsFromOtherSheets, ...matchedCloudActs]
                 } else if (targetCursoNumero) {
                     const otherActs = currentActs.filter(
                         (a) => (a.cursoNumero || '').trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()

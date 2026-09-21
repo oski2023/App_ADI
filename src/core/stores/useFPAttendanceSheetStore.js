@@ -201,13 +201,12 @@ const useFPAttendanceSheetStore = create(
 
                 let finalSheets = []
                 if (targetSpreadsheetId) {
-                    const sheetsFromOtherSheets = currentSheets.filter(
-                        (s) => s.spreadsheetId && s.spreadsheetId !== targetSpreadsheetId
-                    )
-                    const otherCoursesSheets = currentSheets.filter(
-                        (s) => !s.spreadsheetId && targetCursoNumero && s.cursoNumero && s.cursoNumero.trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
-                    )
-                    finalSheets = [...sheetsFromOtherSheets, ...otherCoursesSheets, ...matchedCloudSheets]
+                    const sheetsFromOtherSheets = currentSheets.filter((s) => {
+                        if (s.spreadsheetId && s.spreadsheetId === targetSpreadsheetId) return false
+                        if (targetCursoNumero && s.cursoNumero && s.cursoNumero.trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        return true
+                    })
+                    finalSheets = [...sheetsFromOtherSheets, ...matchedCloudSheets]
                 } else if (targetCursoNumero) {
                     const otherSheets = currentSheets.filter(
                         (s) => (s.cursoNumero || '').trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
