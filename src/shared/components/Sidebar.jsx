@@ -24,7 +24,7 @@ const navItemsEscuela = [
 ]
 
 const navItemsFP = [
-    { path: '/fp', label: 'Formación Profesional', icon: Construction },
+    { path: '/fp', label: 'Dashboard FP', icon: LayoutDashboard },
     { path: '/fp/courses', label: 'Fichas de Curso', icon: GraduationCap },
     { path: '/fp/topic-attendance', label: 'Tema y Asistencia', icon: NotebookPen },
     { path: '/fp/attendance-sheet', label: 'Asistencia de Alumnos', icon: ClipboardCheck },
