@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
@@ -63,9 +63,38 @@ export default function FPAttendanceSheetPage() {
     const [selectedCourseId, setSelectedCourseId] = useState('')
     const activeCourse = courses.find((c) => c.id === selectedCourseId) || courses[0] || null
 
+    // Filtrado robusto multicapa: ID directo, spreadsheetId vinculado, número exacto o coincidencia numérica (ej. "396/26" vs "396")
     const filteredSheets = !activeCourse || selectedCourseId === 'ALL'
         ? sheets
-        : sheets.filter((s) => (s.cursoId && s.cursoId === activeCourse.id) || (s.cursoNumero && s.cursoNumero === activeCourse.cursoNumero))
+        : sheets.filter((s) => {
+            if (s.cursoId && activeCourse.id && s.cursoId === activeCourse.id) return true
+            const courseSpreadsheetId = activeCourse.links?.attendanceSheet?.spreadsheetId
+            if (s.spreadsheetId && courseSpreadsheetId && s.spreadsheetId === courseSpreadsheetId) return true
+            const sCurso = (s.cursoNumero || '').trim().toLowerCase()
+            const aCurso = (activeCourse.cursoNumero || '').trim().toLowerCase()
+            if (sCurso && aCurso && sCurso === aCurso) return true
+            const sDigits = (s.cursoNumero || '').match(/\d+/)?.[0]
+            const aDigits = (activeCourse.cursoNumero || '').match(/\d+/)?.[0]
+            if (sDigits && aDigits && sDigits === aDigits) return true
+            return false
+        })
+
+    // Auto-reparación: asociar cursoId y cursoNumero a planillas que pertenecen a este curso
+    useEffect(() => {
+        if (!activeCourse || !filteredSheets.length) return
+        filteredSheets.forEach((s) => {
+            const needsUpdate = (!s.cursoId && activeCourse.id) ||
+                (!s.cursoNumero && activeCourse.cursoNumero) ||
+                (!s.spreadsheetId && activeCourse.links?.attendanceSheet?.spreadsheetId)
+            if (needsUpdate) {
+                updateSheet(s.id, {
+                    cursoId: s.cursoId || activeCourse.id,
+                    cursoNumero: s.cursoNumero || activeCourse.cursoNumero,
+                    spreadsheetId: s.spreadsheetId || activeCourse.links?.attendanceSheet?.spreadsheetId || '',
+                })
+            }
+        })
+    }, [activeCourse?.id, filteredSheets.length])
 
     const [selectedId, setSelectedId] = useState(null)
     const activeTabId = (selectedId && filteredSheets.some((s) => s.id === selectedId))
@@ -470,7 +499,13 @@ export default function FPAttendanceSheetPage() {
                     deleteSheet(targetSheetId)
                     const allSheets = await readAllFPAttendanceSheets(spreadsheetId).catch(() => [])
                     if (allSheets && allSheets.length > 0) {
-                        syncAllFromCloud(allSheets, spreadsheetId, activeCourse?.cursoNumero)
+                        const enriched = allSheets.map((s) => ({
+                            ...s,
+                            spreadsheetId,
+                            cursoId: activeCourse?.id || s.cursoId || '',
+                            cursoNumero: s.cursoNumero || activeCourse?.cursoNumero || '',
+                        }))
+                        syncAllFromCloud(enriched, spreadsheetId, activeCourse?.cursoNumero, activeCourse?.id)
                     }
                     saveFPCloudRegistry().catch((err) => console.warn(err))
                     toast(`La pestaña "${tabTitle || 'Asistencia'}" no existe en Google Drive (fue eliminada). Se actualizó la app.`, {
@@ -480,7 +515,12 @@ export default function FPAttendanceSheetPage() {
                     return
                 }
 
-                const updatedId = importOrUpdateSheet(data, targetSheetId)
+                const updatedId = importOrUpdateSheet({
+                    ...data,
+                    spreadsheetId,
+                    cursoId: activeCourse?.id || data.cursoId || '',
+                    cursoNumero: data.cursoNumero || activeCourse?.cursoNumero || '',
+                }, targetSheetId)
                 setSelectedId(updatedId)
                 toast.success(`Asistencia traída desde Google Sheets (${data.students.length} alumnos)`)
             } else {
@@ -489,7 +529,28 @@ export default function FPAttendanceSheetPage() {
                     toast.error('No se encontraron planillas de asistencia en la hoja')
                     return
                 }
-                syncAllFromCloud(allSheets, spreadsheetId, activeCourse?.cursoNumero)
+                const enrichedSheets = allSheets.map((s) => ({
+                    ...s,
+                    spreadsheetId,
+                    cursoId: activeCourse?.id || s.cursoId || '',
+                    cursoNumero: s.cursoNumero || activeCourse?.cursoNumero || '',
+                    especialidad: s.especialidad || activeCourse?.especialidad || '',
+                    centroNumero: s.centroNumero || activeCourse?.cfpNumero || '',
+                    distrito: s.distrito || activeCourse?.distrito || '',
+                    lugarDictado: s.lugarDictado || activeCourse?.lugarDictado || '',
+                    instructor: s.instructor || activeCourse?.instructor || '',
+                }))
+                const synced = syncAllFromCloud(enrichedSheets, spreadsheetId, activeCourse?.cursoNumero, activeCourse?.id)
+                if (synced && synced.length > 0) {
+                    const matchedForActiveCourse = synced.filter((s) =>
+                        (s.cursoId && activeCourse?.id && s.cursoId === activeCourse.id) ||
+                        (s.spreadsheetId && s.spreadsheetId === spreadsheetId) ||
+                        (s.cursoNumero && activeCourse?.cursoNumero && s.cursoNumero.trim().toLowerCase() === activeCourse.cursoNumero.trim().toLowerCase())
+                    )
+                    if (matchedForActiveCourse.length > 0) {
+                        setSelectedId(matchedForActiveCourse[0].id)
+                    }
+                }
                 toast.success(`Se sincronizaron ${allSheets.length} pestaña(s) desde Google Sheets`)
             }
         } catch (error) {

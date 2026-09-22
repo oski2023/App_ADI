@@ -104,14 +104,21 @@ const useFPTopicAttendanceStore = create(
             // Sincronización completa (Espejo de Google Sheets)
             // Permite actualizar todas las planillas o solo las pertenecientes a un spreadsheet/curso específico,
             // preservando las planillas de otros cursos para evitar borrados accidentales.
-            syncAllFromCloud: (cloudSheets, targetSpreadsheetId = null, targetCursoNumero = null) => {
+            syncAllFromCloud: (cloudSheets, targetSpreadsheetId = null, targetCursoNumero = null, targetCursoId = null) => {
                 const currentSheets = get().sheets
                 const matchedCloudSheets = cloudSheets.map((cSheet) => {
                     const match = currentSheets.find((s) => {
                         if (cSheet.id && s.id === cSheet.id) return true
-                        if (s.googleSheetTitle && cSheet.googleSheetTitle && s.googleSheetTitle.trim().toLowerCase() === cSheet.googleSheetTitle.trim().toLowerCase()) return true
+                        if (s.googleSheetTitle && cSheet.googleSheetTitle && s.googleSheetTitle.trim().toLowerCase() === cSheet.googleSheetTitle.trim().toLowerCase()) {
+                            if (targetSpreadsheetId && s.spreadsheetId && s.spreadsheetId === targetSpreadsheetId) return true
+                            if (targetCursoId && s.cursoId && s.cursoId === targetCursoId) return true
+                            const sDigits = (s.cursoNumero || '').match(/\d+/)?.[0]
+                            const dDigits = (cSheet.cursoNumero || targetCursoNumero || '').match(/\d+/)?.[0]
+                            if (sDigits && dDigits && sDigits === dDigits) return true
+                            return true
+                        }
                         const sCurso = (s.cursoNumero || '').trim().toLowerCase()
-                        const dCurso = (cSheet.cursoNumero || '').trim().toLowerCase()
+                        const dCurso = (cSheet.cursoNumero || targetCursoNumero || '').trim().toLowerCase()
                         const sMes = (s.mesDe || '').trim().toLowerCase()
                         const dMes = (cSheet.mesDe || '').trim().toLowerCase()
                         if (sCurso && dCurso && sCurso === dCurso) {
@@ -123,6 +130,8 @@ const useFPTopicAttendanceStore = create(
                         ...emptySheet(),
                         ...(match || {}),
                         ...cSheet,
+                        cursoId: cSheet.cursoId || targetCursoId || match?.cursoId || '',
+                        cursoNumero: cSheet.cursoNumero || targetCursoNumero || match?.cursoNumero || '',
                         spreadsheetId: cSheet.spreadsheetId || targetSpreadsheetId || match?.spreadsheetId || '',
                         id: match ? match.id : (cSheet.id || crypto.randomUUID()),
                     }
@@ -132,21 +141,36 @@ const useFPTopicAttendanceStore = create(
                 if (targetSpreadsheetId) {
                     const sheetsFromOtherSheets = currentSheets.filter((s) => {
                         if (s.spreadsheetId && s.spreadsheetId === targetSpreadsheetId) return false
-                        if (targetCursoNumero && s.cursoNumero && s.cursoNumero.trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        if (targetCursoId && s.cursoId && s.cursoId === targetCursoId) return false
+                        if (targetCursoNumero) {
+                            const sDigits = (s.cursoNumero || '').match(/\d+/)?.[0]
+                            const tDigits = targetCursoNumero.match(/\d+/)?.[0]
+                            if (sDigits && tDigits && sDigits === tDigits) return false
+                            if ((s.cursoNumero || '').trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        }
                         return true
                     })
                     finalSheets = [...sheetsFromOtherSheets, ...matchedCloudSheets]
-                } else if (targetCursoNumero) {
-                    const otherSheets = currentSheets.filter(
-                        (s) => (s.cursoNumero || '').trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
-                    )
+                } else if (targetCursoId || targetCursoNumero) {
+                    const otherSheets = currentSheets.filter((s) => {
+                        if (targetCursoId && s.cursoId && s.cursoId === targetCursoId) return false
+                        if (targetCursoNumero) {
+                            const sDigits = (s.cursoNumero || '').match(/\d+/)?.[0]
+                            const tDigits = targetCursoNumero.match(/\d+/)?.[0]
+                            if (sDigits && tDigits && sDigits === tDigits) return false
+                            if ((s.cursoNumero || '').trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        }
+                        return true
+                    })
                     finalSheets = [...otherSheets, ...matchedCloudSheets]
                 } else {
                     const incomingCursos = new Set(matchedCloudSheets.map((s) => (s.cursoNumero || '').trim().toLowerCase()).filter(Boolean))
                     const incomingSpreadsheets = new Set(matchedCloudSheets.map((s) => s.spreadsheetId).filter(Boolean))
+                    const incomingCursoIds = new Set(matchedCloudSheets.map((s) => s.cursoId).filter(Boolean))
                     const sheetsNotCovered = currentSheets.filter((s) => {
                         const sCurso = (s.cursoNumero || '').trim().toLowerCase()
                         if (s.spreadsheetId && incomingSpreadsheets.has(s.spreadsheetId)) return false
+                        if (s.cursoId && incomingCursoIds.has(s.cursoId)) return false
                         if (sCurso && incomingCursos.has(sCurso)) return false
                         return true
                     })

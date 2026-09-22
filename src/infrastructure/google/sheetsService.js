@@ -763,6 +763,11 @@ export function parseFPTopicGrid(rows, sheetTitle = '') {
         headerData[field] = getCellFromGrid(rows, cell)
     })
 
+    // Si cursoNumero en F5 está vacío (posible combinación de celdas E5:G5 en el Drive), chequear celdas adyacentes
+    if (!headerData.cursoNumero) {
+        headerData.cursoNumero = getCellFromGrid(rows, 'E5') || getCellFromGrid(rows, 'D5') || getCellFromGrid(rows, 'G5') || ''
+    }
+
     const horarios = {}
     Object.entries(FP_TOPIC_HORARIO_CELLS).forEach(([dia, cell]) => {
         horarios[dia] = getCellFromGrid(rows, cell)
@@ -810,6 +815,7 @@ export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
         })
         const rows = response.result.values || []
         const parsed = parseFPTopicGrid(rows, sheetTitle)
+        parsed.spreadsheetId = spreadsheetId
         if (!parsed.mesDe && sheetTitle) {
             parsed.mesDe = sheetTitle
         }
@@ -842,6 +848,7 @@ export async function readAllFPTopicAttendanceSheets(spreadsheetId) {
             const tabTitle = tabs[idx]?.properties?.title || ''
             const rows = vr.values || []
             const parsed = parseFPTopicGrid(rows, tabTitle)
+            parsed.spreadsheetId = spreadsheetId
 
             if (!parsed.mesDe && tabTitle) {
                 parsed.mesDe = tabTitle
@@ -1101,6 +1108,7 @@ export async function readFPAttendanceSheet(spreadsheetId, sheetTitle) {
         })
         const rows = response.result.values || []
         const parsed = parseFPAttendanceGrid(rows, sheetTitle)
+        parsed.spreadsheetId = spreadsheetId
         if (!parsed.informeMes && sheetTitle) {
             parsed.informeMes = sheetTitle
         }
@@ -1133,6 +1141,7 @@ export async function readAllFPAttendanceSheets(spreadsheetId) {
             const tabTitle = tabs[idx]?.properties?.title || ''
             const rows = vr.values || []
             const parsed = parseFPAttendanceGrid(rows, tabTitle)
+            parsed.spreadsheetId = spreadsheetId
 
             if (!parsed.informeMes && tabTitle) {
                 parsed.informeMes = tabTitle
