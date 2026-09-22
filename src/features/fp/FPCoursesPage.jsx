@@ -5,6 +5,7 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
+import GoogleNotLinkedModal, { GoogleNotLinkedBanner } from '../../shared/components/GoogleNotLinkedModal'
 import { Plus, Trash2, ArrowLeft, GraduationCap, RefreshCw, CloudDownload, Link2, AlertCircle, Cloud, AlertTriangle, ArrowDownAZ, Folder, FolderSearch, CheckCircle, XCircle } from 'lucide-react'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
@@ -66,6 +67,7 @@ export default function FPCoursesPage() {
     const [showLinkModal, setShowLinkModal] = useState(false)
     const [linkInput, setLinkInput] = useState('')
     const [linking, setLinking] = useState(false)
+    const [showGoogleNotLinkedModal, setShowGoogleNotLinkedModal] = useState(false)
 
     // Modal para Nuevo Curso (con link o en blanco)
     const [showNewCourseModal, setShowNewCourseModal] = useState(false)
@@ -83,7 +85,7 @@ export default function FPCoursesPage() {
             return
         }
         if (!googleLinked) {
-            toast.error('Primero debés vincular tu cuenta de Google en Configuración.', { duration: 6000 })
+            setShowGoogleNotLinkedModal(true)
             return
         }
         setCreatingFromLink(true)
@@ -188,6 +190,10 @@ export default function FPCoursesPage() {
     }
 
     const handleSyncSingle = async (courseToSync) => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         const targetSpreadsheetId = courseToSync.spreadsheetId || courseLink?.spreadsheetId
         const targetSheetTitle = courseToSync.googleSheetTitle || courseLink?.sheetTitle
         if (!targetSpreadsheetId) {
@@ -219,6 +225,10 @@ export default function FPCoursesPage() {
     }
 
     const handleSyncAll = async () => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         if (courses.length === 0) {
             toast.error('No tenés cursos cargados para sincronizar')
             return
@@ -260,6 +270,10 @@ export default function FPCoursesPage() {
     }
 
     const handleSyncGeneral = async () => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         const hasAnyLink = courses.some((c) => c.spreadsheetId) || courseLink
         if (!hasAnyLink) {
             setShowLinkModal(true)
@@ -414,6 +428,10 @@ export default function FPCoursesPage() {
     }
 
     const handlePullFromSheets = async (targetCourseId = null) => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         if (targetCourseId) {
             let targetCourse = courses.find((c) => c.id === targetCourseId)
             let targetSpreadsheetId = targetCourse?.spreadsheetId || courseLink?.spreadsheetId
@@ -506,7 +524,7 @@ export default function FPCoursesPage() {
             return
         }
         if (!googleLinked) {
-            toast.error('Primero debés vincular tu cuenta de Google en Configuración.', { duration: 6000 })
+            setShowGoogleNotLinkedModal(true)
             return
         }
         setLinking(true)
@@ -585,7 +603,7 @@ export default function FPCoursesPage() {
     const handleDiscoverCourseFiles = async (courseToScan) => {
         if (!courseToScan) return
         if (!googleLinked) {
-            toast.error('Primero debés vincular tu cuenta de Google en Configuración.')
+            setShowGoogleNotLinkedModal(true)
             return
         }
         setDiscovering(true)
@@ -1067,6 +1085,9 @@ export default function FPCoursesPage() {
                 title="Vincular Fichas de Curso"
             >
                 <div className="space-y-4 p-2">
+                    {!googleLinked && (
+                        <GoogleNotLinkedBanner onClose={() => setShowLinkModal(false)} />
+                    )}
                     <p className="text-sm text-text-secondary">
                         Para sincronizar con este dispositivo (ej. tu celular), pegá el link o ID de la hoja de cálculo de Google Sheets correspondiente:
                     </p>
@@ -1081,6 +1102,11 @@ export default function FPCoursesPage() {
                             icon={Cloud}
                             disabled={linking}
                             onClick={async () => {
+                                if (!googleLinked) {
+                                    setShowLinkModal(false)
+                                    setShowGoogleNotLinkedModal(true)
+                                    return
+                                }
                                 setLinking(true)
                                 const toastId = toast.loading('Buscando en Google Drive...')
                                 try {
@@ -1133,23 +1159,7 @@ export default function FPCoursesPage() {
             >
                 <div className="space-y-4 p-2">
                     {!googleLinked && (
-                        <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2.5">
-                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-                            <div className="space-y-1">
-                                <p className="font-semibold">Cuenta de Google no vinculada en este dispositivo</p>
-                                <p>Para poder leer y sincronizar planillas de Google Drive, primero debés conectar tu cuenta de Google en Configuración.</p>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setShowNewCourseModal(false)
-                                        navigate('/settings')
-                                    }}
-                                    className="font-semibold underline hover:text-amber-900 dark:hover:text-amber-100 mt-1 inline-block cursor-pointer"
-                                >
-                                    Ir a Configuración para conectar Google →
-                                </button>
-                            </div>
-                        </div>
+                        <GoogleNotLinkedBanner onClose={() => setShowNewCourseModal(false)} />
                     )}
                     <p className="text-sm text-text-secondary">
                         Ingresá el link o ID de la hoja de Google Sheets de este nuevo curso. La aplicación mapeará automáticamente todos los datos del curso y la lista de alumnos:
@@ -1195,6 +1205,12 @@ export default function FPCoursesPage() {
                     </div>
                 </div>
             </Modal>
+
+            {/* Modal que informa que la cuenta de Google no está vinculada y guía a Configuración */}
+            <GoogleNotLinkedModal
+                isOpen={showGoogleNotLinkedModal}
+                onClose={() => setShowGoogleNotLinkedModal(false)}
+            />
         </div>
     )
 }

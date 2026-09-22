@@ -115,7 +115,7 @@ const useFPTopicAttendanceStore = create(
                         const sMes = (s.mesDe || '').trim().toLowerCase()
                         const dMes = (cSheet.mesDe || '').trim().toLowerCase()
                         if (sCurso && dCurso && sCurso === dCurso) {
-                            if (!sMes || !dMes || sMes === dMes) return true
+                            if (sMes && dMes && sMes === dMes) return true
                         }
                         return false
                     })

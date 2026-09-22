@@ -4,11 +4,13 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
+import GoogleNotLinkedModal, { GoogleNotLinkedBanner } from '../../shared/components/GoogleNotLinkedModal'
 import { Plus, Trash2, ArrowLeft, ClipboardCheck, RefreshCw, CloudDownload, Link2, Cloud, AlertTriangle } from 'lucide-react'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
+import useSettingsStore from '../../core/stores/useSettingsStore'
 import { syncFPAttendanceSheet, readFPAttendanceSheet, readAllFPAttendanceSheets, clearFPAttendanceSheet, deleteFPSpreadsheetTab, buildFPAttendanceTabTitle, linkFPDocument } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
 import { discoverFolderAndFilesForCourse } from '../../infrastructure/google/fpDriveDiscovery'
@@ -54,6 +56,9 @@ export default function FPAttendanceSheetPage() {
     const syncStudentsFromCourse = useFPAttendanceSheetStore((s) => s.syncStudentsFromCourse)
     const importOrUpdateSheet = useFPAttendanceSheetStore((s) => s.importOrUpdateSheet)
     const syncAllFromCloud = useFPAttendanceSheetStore((s) => s.syncAllFromCloud)
+
+    const googleLinked = useSettingsStore((s) => s.googleLinked)
+    const [showGoogleNotLinkedModal, setShowGoogleNotLinkedModal] = useState(false)
 
     const [selectedCourseId, setSelectedCourseId] = useState('')
     const activeCourse = courses.find((c) => c.id === selectedCourseId) || courses[0] || null
@@ -218,6 +223,11 @@ export default function FPAttendanceSheetPage() {
     const [showSyncSelectModal, setShowSyncSelectModal] = useState(false)
 
     const handleSyncSingle = async (sheetToSync) => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
+
         const courseForSheet = courses.find((c) =>
             (c.id && c.id === sheetToSync.cursoId) ||
             (c.cursoNumero && sheetToSync.cursoNumero && c.cursoNumero.trim().toLowerCase() === sheetToSync.cursoNumero.trim().toLowerCase())
@@ -277,6 +287,10 @@ export default function FPAttendanceSheetPage() {
     }
 
     const handleSyncAll = async () => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         if (sheets.length === 0) {
             toast.error('No tenés planillas cargadas para sincronizar')
             return
@@ -337,6 +351,11 @@ export default function FPAttendanceSheetPage() {
     }
 
     const handleSyncGeneral = async () => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
+
         const hasAnyLink = sheets.some((s) => s.spreadsheetId) ||
             courses.some((c) => c.links?.attendanceSheet?.spreadsheetId) ||
             attendanceLink
@@ -485,6 +504,11 @@ export default function FPAttendanceSheetPage() {
     }
 
     const handlePullFromSheets = async (targetSheetId = null) => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
+
         if (targetSheetId) {
             const current = sheets.find((s) => s.id === targetSheetId)
             const courseForSheet = courses.find((c) =>
@@ -624,6 +648,10 @@ export default function FPAttendanceSheetPage() {
     const handleLinkAndPull = async () => {
         if (!linkInput.trim()) {
             toast.error('Pegá el link o ID de la hoja de cálculo')
+            return
+        }
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
             return
         }
         setLinking(true)
@@ -1302,6 +1330,9 @@ export default function FPAttendanceSheetPage() {
                 title="Vincular Asistencia de Alumnos"
             >
                 <div className="space-y-4 p-2">
+                    {!googleLinked && (
+                        <GoogleNotLinkedBanner onClose={() => setShowLinkModal(false)} />
+                    )}
                     <p className="text-sm text-text-secondary">
                         Para sincronizar con este dispositivo (ej. tu celular), pegá el link o ID de la hoja de cálculo de Google Sheets correspondiente:
                     </p>
@@ -1316,6 +1347,11 @@ export default function FPAttendanceSheetPage() {
                             icon={Cloud}
                             disabled={linking}
                             onClick={async () => {
+                                if (!googleLinked) {
+                                    setShowLinkModal(false)
+                                    setShowGoogleNotLinkedModal(true)
+                                    return
+                                }
                                 setLinking(true)
                                 const toastId = toast.loading('Buscando en Google Drive...')
                                 try {
@@ -1448,6 +1484,12 @@ export default function FPAttendanceSheetPage() {
                     </div>
                 </div>
             </Modal>
+
+            {/* Modal que informa que la cuenta de Google no está vinculada y guía a Configuración */}
+            <GoogleNotLinkedModal
+                isOpen={showGoogleNotLinkedModal}
+                onClose={() => setShowGoogleNotLinkedModal(false)}
+            />
         </div>
     )
 }

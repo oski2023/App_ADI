@@ -4,12 +4,14 @@ import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
 import Modal from '../../shared/components/Modal'
 import ConfirmModal from '../../shared/components/ConfirmModal'
+import GoogleNotLinkedModal, { GoogleNotLinkedBanner } from '../../shared/components/GoogleNotLinkedModal'
 import { Plus, Trash2, ArrowLeft, FileText, Calculator, RefreshCw, CloudDownload, Link2, Cloud, AlertTriangle } from 'lucide-react'
 import useFPExamActStore from '../../core/stores/useFPExamActStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
 import useFPAttendanceSheetStore from '../../core/stores/useFPAttendanceSheetStore'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useFPUpdateAlertStore from '../../core/stores/useFPUpdateAlertStore'
+import useSettingsStore from '../../core/stores/useSettingsStore'
 import { numberToWordsEs } from '../../utils/numberToWordsEs'
 import {
     syncFPExamActSheet,
@@ -67,6 +69,9 @@ export default function FPExamActPage() {
 
     const examActLink = useFPGoogleLinksStore((s) => s.links.examAct)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
+
+    const googleLinked = useSettingsStore((s) => s.googleLinked)
+    const [showGoogleNotLinkedModal, setShowGoogleNotLinkedModal] = useState(false)
 
     const [syncing, setSyncing] = useState(false)
     const [pulling, setPulling] = useState(false)
@@ -184,6 +189,11 @@ export default function FPExamActPage() {
     }
 
     const handleSyncSingle = async (actToSync) => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
+
         const courseForAct = courses.find((c) =>
             (c.id && c.id === actToSync.cursoId) ||
             (c.cursoNumero && actToSync.cursoNumero && c.cursoNumero.trim().toLowerCase() === actToSync.cursoNumero.trim().toLowerCase())
@@ -242,6 +252,10 @@ export default function FPExamActPage() {
     }
 
     const handleSyncAll = async () => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         if (acts.length === 0) {
             toast.error('No tenés actas cargadas para sincronizar')
             return
@@ -302,6 +316,11 @@ export default function FPExamActPage() {
     }
 
     const handleSyncGeneral = async () => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
+
         const hasAnyLink = acts.some((a) => a.spreadsheetId) ||
             courses.some((c) => c.links?.examAct?.spreadsheetId) ||
             examActLink
@@ -398,6 +417,10 @@ export default function FPExamActPage() {
     }
 
     const handlePullFromSheets = async (targetActId = null) => {
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
+            return
+        }
         if (targetActId) {
             const current = acts.find((a) => a.id === targetActId)
             const courseForAct = courses.find((c) =>
@@ -498,6 +521,10 @@ export default function FPExamActPage() {
     const handleLinkAndPull = async () => {
         if (!linkInput.trim()) {
             toast.error('Pegá el link o ID de la hoja de cálculo')
+            return
+        }
+        if (!googleLinked) {
+            setShowGoogleNotLinkedModal(true)
             return
         }
         setLinking(true)
@@ -1057,6 +1084,9 @@ export default function FPExamActPage() {
                 title="Vincular Actas de Examen"
             >
                 <div className="space-y-4 p-2">
+                    {!googleLinked && (
+                        <GoogleNotLinkedBanner onClose={() => setShowLinkModal(false)} />
+                    )}
                     <p className="text-sm text-text-secondary">
                         Para sincronizar con este dispositivo (ej. tu celular), pegá el link o ID de la hoja de cálculo de Google Sheets correspondiente:
                     </p>
@@ -1071,6 +1101,11 @@ export default function FPExamActPage() {
                             icon={Cloud}
                             disabled={linking}
                             onClick={async () => {
+                                if (!googleLinked) {
+                                    setShowLinkModal(false)
+                                    setShowGoogleNotLinkedModal(true)
+                                    return
+                                }
                                 setLinking(true)
                                 const toastId = toast.loading('Buscando en Google Drive...')
                                 try {
@@ -1138,6 +1173,12 @@ export default function FPExamActPage() {
                     </div>
                 </div>
             </Modal>
+
+            {/* Modal que informa que la cuenta de Google no está vinculada y guía a Configuración */}
+            <GoogleNotLinkedModal
+                isOpen={showGoogleNotLinkedModal}
+                onClose={() => setShowGoogleNotLinkedModal(false)}
+            />
         </div>
     )
 }

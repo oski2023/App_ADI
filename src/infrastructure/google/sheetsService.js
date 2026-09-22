@@ -288,10 +288,12 @@ export function buildFPAttendanceTabTitle(sheet) {
 }
 
 export function buildFPTopicTabTitle(sheet) {
+    if (sheet.mesDe?.trim()) {
+        return sanitizeSheetTabTitle(sheet.mesDe.trim().toUpperCase(), 'Tema y Asistencia')
+    }
     const parts = []
     if (sheet.cursoNumero) parts.push(`Curso ${sheet.cursoNumero}`)
     if (sheet.especialidad) parts.push(sheet.especialidad)
-    if (sheet.mesDe) parts.push(sheet.mesDe)
     return sanitizeSheetTabTitle(parts.join(' - '), 'Tema y Asistencia')
 }
 
@@ -807,7 +809,11 @@ export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
             valueRenderOption: 'FORMATTED_VALUE',
         })
         const rows = response.result.values || []
-        return parseFPTopicGrid(rows, sheetTitle)
+        const parsed = parseFPTopicGrid(rows, sheetTitle)
+        if (!parsed.mesDe && sheetTitle) {
+            parsed.mesDe = sheetTitle
+        }
+        return parsed
     } catch (error) {
         console.error('[SheetsService] Error al leer Tema y Asistencia:', error)
         throw error
@@ -837,13 +843,33 @@ export async function readAllFPTopicAttendanceSheets(spreadsheetId) {
             const rows = vr.values || []
             const parsed = parseFPTopicGrid(rows, tabTitle)
 
+            if (!parsed.mesDe && tabTitle) {
+                parsed.mesDe = tabTitle
+            }
+
+            // Si faltan datos de cabecera en pestañas subsiguientes (ej. Abril, Mayo), heredarlos de la primera pestaña
+            const firstResult = results[0]
+            if (firstResult) {
+                if (!parsed.cursoNumero && firstResult.cursoNumero) parsed.cursoNumero = firstResult.cursoNumero
+                if (!parsed.especialidad && firstResult.especialidad) parsed.especialidad = firstResult.especialidad
+                if (!parsed.cfpNumero && firstResult.cfpNumero) parsed.cfpNumero = firstResult.cfpNumero
+                if (!parsed.distrito && firstResult.distrito) parsed.distrito = firstResult.distrito
+                if (!parsed.sedeDictado && firstResult.sedeDictado) parsed.sedeDictado = firstResult.sedeDictado
+                if (!parsed.instructor && firstResult.instructor) parsed.instructor = firstResult.instructor
+                if (!parsed.region && firstResult.region) parsed.region = firstResult.region
+                if ((!parsed.horarios || Object.values(parsed.horarios).every((v) => !v)) && firstResult.horarios) {
+                    parsed.horarios = { ...firstResult.horarios }
+                }
+            }
+
             const hasData =
                 Boolean(parsed.cursoNumero?.trim()) ||
                 Boolean(parsed.especialidad?.trim()) ||
                 Boolean(parsed.cfpNumero?.trim()) ||
+                Boolean(parsed.mesDe?.trim()) ||
                 parsed.entries.length > 0
 
-            if (hasData || tabs.length === 1) {
+            if (hasData || tabs.length <= 12) {
                 results.push(parsed)
             }
         })
