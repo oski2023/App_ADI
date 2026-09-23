@@ -5,6 +5,8 @@ import { initGoogleAuth, getAccessToken } from './googleAuth'
 import { isGoogleConfigured } from './googleConfig'
 import useFPGoogleLinksStore from '../../core/stores/useFPGoogleLinksStore'
 import useFPCourseStore from '../../core/stores/useFPCourseStore'
+import useFPAdminRecordsStore from '../../core/stores/useFPAdminRecordsStore'
+import useFPAdminLinksStore from '../../core/stores/useFPAdminLinksStore'
 
 const REGISTRY_FILE_NAME = 'App_ADI_FP_Registry.json'
 
@@ -84,6 +86,9 @@ export async function saveFPCloudRegistry(customPayload = null) {
 
         const currentLinks = useFPGoogleLinksStore.getState().links
         const currentCourses = useFPCourseStore.getState().courses
+        const currentAdminRecords = useFPAdminRecordsStore.getState().records
+        const currentAdminLinks = useFPAdminLinksStore.getState().links
+        const currentAdminSubtitle = localStorage.getItem('adi_fp_admin_subtitle') || ''
 
         const payload = {
             app: 'App_ADI',
@@ -109,6 +114,9 @@ export async function saveFPCloudRegistry(customPayload = null) {
                 folderName: c.folderName || '',
                 links: c.links || null,
             })),
+            adminRecords: currentAdminRecords,
+            adminLinks: currentAdminLinks,
+            adminSubtitle: currentAdminSubtitle,
             ...(customPayload || {}),
         }
 
@@ -212,8 +220,28 @@ export function restoreFPCloudRegistry(cloudData) {
         })
     }
 
-    console.log(`[FPCloudRegistry] Restauración completada: ${linksRestored} vínculos, ${coursesRestored} cursos.`)
-    return { linksRestored, coursesRestored }
+    // 3. Restaurar registros de Administrativo
+    let adminRecordsRestored = 0
+    if (Array.isArray(cloudData.adminRecords) && cloudData.adminRecords.length > 0) {
+        useFPAdminRecordsStore.getState().setRecords(cloudData.adminRecords)
+        adminRecordsRestored = cloudData.adminRecords.length
+    }
+
+    if (cloudData.adminLinks && typeof cloudData.adminLinks === 'object') {
+        const setAdminLink = useFPAdminLinksStore.getState().setLink
+        Object.entries(cloudData.adminLinks).forEach(([tipo, data]) => {
+            if (data?.spreadsheetId) {
+                setAdminLink(tipo, data)
+            }
+        })
+    }
+
+    if (cloudData.adminSubtitle) {
+        localStorage.setItem('adi_fp_admin_subtitle', cloudData.adminSubtitle)
+    }
+
+    console.log(`[FPCloudRegistry] Restauración completada: ${linksRestored} vínculos, ${coursesRestored} cursos, ${adminRecordsRestored} papeles administrativos.`)
+    return { linksRestored, coursesRestored, adminRecordsRestored }
 }
 
 /**
@@ -224,13 +252,14 @@ export function restoreFPCloudRegistry(cloudData) {
 export async function autoDiscoverAndSyncCloudRegistry() {
     const reg = await fetchFPCloudRegistry()
     if (!reg?.data) {
-        return { success: false, linksRestored: 0, coursesRestored: 0 }
+        return { success: false, linksRestored: 0, coursesRestored: 0, adminRecordsRestored: 0 }
     }
 
-    const { linksRestored, coursesRestored } = restoreFPCloudRegistry(reg.data)
+    const { linksRestored, coursesRestored, adminRecordsRestored } = restoreFPCloudRegistry(reg.data)
     return {
-        success: linksRestored > 0 || coursesRestored > 0,
+        success: linksRestored > 0 || coursesRestored > 0 || adminRecordsRestored > 0,
         linksRestored,
         coursesRestored,
+        adminRecordsRestored,
     }
 }

@@ -7,9 +7,10 @@ const emptyRecord = (data = {}) => ({
     mes: '',
     documento: '',
     cohorte: 'Sin cohorte',
-    cantidad: '',
+    cantidad: '1',
     estado: 'Pendiente',
     link: '',
+    comprobanteUrl: '',
     ...data,
 })
 

@@ -1341,7 +1341,7 @@ export async function syncFPAdminRecords(spreadsheetId, sheetTitle, records) {
         })
 
         if (records.length > 0) {
-            const rows = records.map((r) => [r.id, r.mes, r.documento, r.cohorte, r.cantidad, r.estado, r.link || ''])
+            const rows = records.map((r) => [r.id, r.mes, r.documento, r.cohorte, r.cantidad, r.estado, r.link || '', r.comprobanteUrl || ''])
             await gapi.client.sheets.spreadsheets.values.append({
                 spreadsheetId,
                 range: `${escapeSheetTitle(sheetTitle)}!A1`,
