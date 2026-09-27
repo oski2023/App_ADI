@@ -39,7 +39,9 @@ export function matchFPFileType(fileName) {
         lower.includes('tema y asistencia') ||
         lower.includes('libro de temas') ||
         lower.includes('libro de tema') ||
-        lower.includes('instructor')
+        lower.includes('instructor') ||
+        lower.includes('tema') ||
+        lower.includes('temas')
     ) {
         return 'topicAttendance'
     }

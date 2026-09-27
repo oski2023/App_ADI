@@ -558,7 +558,7 @@ export default function FPAttendanceSheetPage() {
                 notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetSheetId))
             } else {
                 const errMsg = (error?.message || error?.result?.error?.message || '').toLowerCase()
-                if (errMsg.includes('not supported for this document') || errMsg.includes('precondition')) {
+                if (errMsg.includes('not supported for this document') || errMsg.includes('openxml') || errMsg.includes('excel')) {
                     toast.error('El archivo es un Excel (.xlsx). En Google Drive abrilo y hacé clic en "Archivo > Guardar como hoja de cálculo de Google" para sincronizar.', { duration: 9000 })
                 } else {
                     toast.error('Error al traer los datos desde Google Sheets')

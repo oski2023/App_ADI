@@ -173,8 +173,10 @@ const useFPAttendanceSheetStore = create(
             // preservando las planillas de otros cursos para evitar borrados accidentales.
             syncAllFromCloud: (cloudSheets, targetSpreadsheetId = null, targetCursoNumero = null, targetCursoId = null) => {
                 const currentSheets = get().sheets
+                const usedMatchIds = new Set()
                 const matchedCloudSheets = cloudSheets.map((cSheet) => {
                     const match = currentSheets.find((s) => {
+                        if (usedMatchIds.has(s.id)) return false
                         if (cSheet.id && s.id === cSheet.id) return true
                         if (s.googleSheetTitle && cSheet.googleSheetTitle && s.googleSheetTitle.trim().toLowerCase() === cSheet.googleSheetTitle.trim().toLowerCase()) {
                             if (targetSpreadsheetId && s.spreadsheetId && s.spreadsheetId === targetSpreadsheetId) return true
@@ -200,7 +202,7 @@ const useFPAttendanceSheetStore = create(
                         cursoId: cSheet.cursoId || targetCursoId || match?.cursoId || '',
                         cursoNumero: cSheet.cursoNumero || targetCursoNumero || match?.cursoNumero || '',
                         spreadsheetId: cSheet.spreadsheetId || targetSpreadsheetId || match?.spreadsheetId || '',
-                        id: match ? match.id : (cSheet.id || crypto.randomUUID()),
+                        id: match ? (usedMatchIds.add(match.id), match.id) : crypto.randomUUID(),
                     }
                 })
 

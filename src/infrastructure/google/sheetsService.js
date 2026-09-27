@@ -816,7 +816,10 @@ export async function readFPTopicAttendanceSheet(spreadsheetId, sheetTitle) {
         const rows = response.result.values || []
         const parsed = parseFPTopicGrid(rows, sheetTitle)
         parsed.spreadsheetId = spreadsheetId
-        if (!parsed.mesDe && sheetTitle) {
+        const MESES_NAMES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
+        if (sheetTitle && MESES_NAMES.includes(sheetTitle.trim().toUpperCase())) {
+            parsed.mesDe = sheetTitle.trim().toUpperCase()
+        } else if (!parsed.mesDe && sheetTitle) {
             parsed.mesDe = sheetTitle
         }
         return parsed
@@ -850,7 +853,10 @@ export async function readAllFPTopicAttendanceSheets(spreadsheetId) {
             const parsed = parseFPTopicGrid(rows, tabTitle)
             parsed.spreadsheetId = spreadsheetId
 
-            if (!parsed.mesDe && tabTitle) {
+            const MESES_NAMES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
+            if (tabTitle && MESES_NAMES.includes(tabTitle.trim().toUpperCase())) {
+                parsed.mesDe = tabTitle.trim().toUpperCase()
+            } else if (!parsed.mesDe && tabTitle) {
                 parsed.mesDe = tabTitle
             }
 
@@ -1143,7 +1149,10 @@ export async function readAllFPAttendanceSheets(spreadsheetId) {
             const parsed = parseFPAttendanceGrid(rows, tabTitle)
             parsed.spreadsheetId = spreadsheetId
 
-            if (!parsed.informeMes && tabTitle) {
+            const MESES_NAMES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
+            if (tabTitle && MESES_NAMES.includes(tabTitle.trim().toUpperCase())) {
+                parsed.informeMes = tabTitle.trim().toUpperCase()
+            } else if (!parsed.informeMes && tabTitle) {
                 parsed.informeMes = tabTitle
             }
 

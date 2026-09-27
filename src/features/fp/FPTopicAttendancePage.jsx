@@ -85,6 +85,37 @@ export default function FPTopicAttendancePage() {
         })
     }, [activeCourse?.id, filteredSheets.length])
 
+    // Auto-reparación y deduplicación de IDs y meses
+    useEffect(() => {
+        if (!sheets || sheets.length === 0) return
+        const seenIds = new Set()
+        let hasDuplicates = false
+        const deduplicated = sheets.map((s) => {
+            if (seenIds.has(s.id)) {
+                hasDuplicates = true
+                return { ...s, id: crypto.randomUUID() }
+            }
+            seenIds.add(s.id)
+            return s
+        })
+        if (hasDuplicates) {
+            console.log('[FPTopicAttendancePage] Se repararon IDs duplicados en planillas de tema')
+            useFPTopicAttendanceStore.setState({ sheets: deduplicated })
+        }
+    }, [sheets.length])
+
+    // Sincronizar mesDe con googleSheetTitle si el título es un mes canónico
+    useEffect(() => {
+        if (!filteredSheets || !filteredSheets.length) return
+        const MESES_NAMES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
+        filteredSheets.forEach((s) => {
+            const tabUpper = (s.googleSheetTitle || '').trim().toUpperCase()
+            if (MESES_NAMES.includes(tabUpper) && (!s.mesDe || s.mesDe.trim().toUpperCase() !== tabUpper)) {
+                updateSheet(s.id, { mesDe: tabUpper })
+            }
+        })
+    }, [filteredSheets.length, activeTabId])
+
     const [selectedId, setSelectedId] = useState(null)
     const activeTabId = (selectedId && filteredSheets.some((s) => s.id === selectedId))
         ? selectedId
@@ -436,7 +467,7 @@ export default function FPTopicAttendancePage() {
                 notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetSheetId))
             } else {
                 const errMsg = (error?.message || error?.result?.error?.message || '').toLowerCase()
-                if (errMsg.includes('not supported for this document') || errMsg.includes('precondition')) {
+                if (errMsg.includes('not supported for this document') || errMsg.includes('openxml') || errMsg.includes('excel')) {
                     toast.error('El archivo es un Excel (.xlsx). En Google Drive abrilo y hacé clic en "Archivo > Guardar como hoja de cálculo de Google" para sincronizar.', { duration: 9000 })
                 } else {
                     toast.error('Error al traer los datos desde Google Sheets')
@@ -499,30 +530,59 @@ export default function FPTopicAttendancePage() {
 
         // Pull de las pestañas del curso activo (o general si se seleccionó 'ALL')
         if (activeCourse && selectedCourseId !== 'ALL') {
+            setPulling(true)
+            const toastId = toast.loading('Buscando archivo de Tema y Asistencia en Drive...')
+
             let targetSpreadsheetId = activeCourse.links?.topicAttendance?.spreadsheetId || topicLink?.spreadsheetId
             let targetSheetTitle = activeCourse.links?.topicAttendance?.sheetTitle || topicLink?.sheetTitle
 
-            if (!targetSpreadsheetId) {
-                setPulling(true)
-                const toastId = toast.loading('Buscando archivo de Tema y Asistencia en Drive...')
-                try {
-                    const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
-                    if (disc.success && disc.links?.topicAttendance?.spreadsheetId) {
+            try {
+                // Verificar siempre en Google Drive para detectar archivos nuevos, renombrados o si el vinculado fue a la papelera
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                if (disc.success && disc.links?.topicAttendance?.spreadsheetId) {
+                    const discovered = disc.links.topicAttendance
+                    const isNewOrDifferent = !targetSpreadsheetId || targetSpreadsheetId !== discovered.spreadsheetId
+
+                    useFPCourseStore.getState().updateCourse(activeCourse.id, {
+                        folderId: disc.folderId || activeCourse.folderId || '',
+                        folderName: disc.folderName || activeCourse.folderName || '',
+                        links: { ...(activeCourse.links || {}), ...disc.links },
+                    })
+                    saveFPCloudRegistry().catch((err) => console.warn(err))
+
+                    targetSpreadsheetId = discovered.spreadsheetId
+                    targetSheetTitle = discovered.name || targetSheetTitle
+
+                    if (isNewOrDifferent) {
+                        toast.success(`¡Archivo detectado en Google Drive: "${discovered.name}"!`)
+                    }
+                    if (discovered.isExcel && !discovered.isGoogleSheet) {
+                        toast('El archivo en Drive es formato Excel (.xlsx). Para que Google Sheets pueda leer las pestañas, en Google Drive hacé clic derecho > Abrir con > Guardar como Hoja de cálculo de Google.', {
+                            icon: '⚠️',
+                            duration: 8000,
+                        })
+                    }
+                } else if (targetSpreadsheetId) {
+                    // Si el auto-descubrimiento no lo encontró en la carpeta, verificar si el archivo actual está en papelera
+                    const status = await checkDriveFileStatus(targetSpreadsheetId)
+                    if (status.trashed || status.notFound) {
+                        console.warn(`[FPTopicAttendancePage] El archivo (${targetSpreadsheetId}) está en la papelera o no existe en Drive.`)
                         useFPCourseStore.getState().updateCourse(activeCourse.id, {
-                            folderId: disc.folderId || activeCourse.folderId || '',
-                            folderName: disc.folderName || activeCourse.folderName || '',
-                            links: { ...(activeCourse.links || {}), ...disc.links },
+                            links: { ...(activeCourse.links || {}), topicAttendance: null },
                         })
                         saveFPCloudRegistry().catch((err) => console.warn(err))
-                        targetSpreadsheetId = disc.links.topicAttendance.spreadsheetId
-                        toast.success(`Archivo detectado en carpeta "${disc.folderName || activeCourse.cursoNumero}"`)
+                        targetSpreadsheetId = null
+                        toast('El archivo vinculado anteriormente fue eliminado o está en la papelera de Google Drive.', {
+                            icon: '⚠️',
+                            duration: 6000,
+                        })
                     }
-                } catch (e) {
-                    console.warn(e)
-                } finally {
-                    toast.dismiss(toastId)
-                    setPulling(false)
                 }
+            } catch (discErr) {
+                console.warn('[FPTopicAttendancePage] Error buscando en Drive:', discErr)
+            } finally {
+                toast.dismiss(toastId)
+                setPulling(false)
             }
 
             if (!targetSpreadsheetId) {
