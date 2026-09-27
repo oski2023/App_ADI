@@ -22,7 +22,7 @@ import {
     linkFPDocument,
 } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
-import { discoverFolderAndFilesForCourse } from '../../infrastructure/google/fpDriveDiscovery'
+import { discoverFolderAndFilesForCourse, checkDriveFileStatus } from '../../infrastructure/google/fpDriveDiscovery'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -453,7 +453,12 @@ export default function FPExamActPage() {
             if (isAuthError(error)) {
                 notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetActId))
             } else {
-                toast.error('Error al traer los datos desde Google Sheets')
+                const errMsg = (error?.message || error?.result?.error?.message || '').toLowerCase()
+                if (errMsg.includes('not supported for this document') || errMsg.includes('precondition')) {
+                    toast.error('El archivo es un Excel (.xlsx). En Google Drive abrilo y hacé clic en "Archivo > Guardar como hoja de cálculo de Google" para sincronizar.', { duration: 9000 })
+                } else {
+                    toast.error('Error al traer los datos desde Google Sheets')
+                }
             }
         } finally {
             setPulling(false)
@@ -511,30 +516,59 @@ export default function FPExamActPage() {
 
         // Pull de las actas del curso activo (o general si se seleccionó 'ALL')
         if (activeCourse && selectedCourseId !== 'ALL') {
+            setPulling(true)
+            const toastId = toast.loading('Buscando acta de examen en Drive...')
+
             let targetSpreadsheetId = activeCourse.links?.examAct?.spreadsheetId || examActLink?.spreadsheetId
             let targetSheetTitle = activeCourse.links?.examAct?.sheetTitle || examActLink?.sheetTitle
 
-            if (!targetSpreadsheetId) {
-                setPulling(true)
-                const toastId = toast.loading('Buscando acta de examen en Drive...')
-                try {
-                    const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
-                    if (disc.success && disc.links?.examAct?.spreadsheetId) {
+            try {
+                // Verificar siempre en Google Drive para detectar archivos nuevos, renombrados o si el vinculado fue a la papelera
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                    const discovered = disc.links.examAct
+                    const isNewOrDifferent = !targetSpreadsheetId || targetSpreadsheetId !== discovered.spreadsheetId
+
+                    useFPCourseStore.getState().updateCourse(activeCourse.id, {
+                        folderId: disc.folderId || activeCourse.folderId || '',
+                        folderName: disc.folderName || activeCourse.folderName || '',
+                        links: { ...(activeCourse.links || {}), ...disc.links },
+                    })
+                    saveFPCloudRegistry().catch((err) => console.warn(err))
+
+                    targetSpreadsheetId = discovered.spreadsheetId
+                    targetSheetTitle = discovered.name || targetSheetTitle
+
+                    if (isNewOrDifferent) {
+                        toast.success(`¡Nuevo archivo detectado en Drive: "${discovered.name}"!`)
+                    }
+                    if (discovered.isExcel && !discovered.isGoogleSheet) {
+                        toast('El archivo en Drive es formato Excel (.xlsx). Para que Google Sheets pueda leer las pestañas, en Google Drive hacé clic derecho > Abrir con > Guardar como Hoja de cálculo de Google.', {
+                            icon: '⚠️',
+                            duration: 8000,
+                        })
+                    }
+                } else if (targetSpreadsheetId) {
+                    // Si el auto-descubrimiento no lo encontró en la carpeta, verificar si el archivo actual está en papelera
+                    const status = await checkDriveFileStatus(targetSpreadsheetId)
+                    if (status.trashed || status.notFound) {
+                        console.warn(`[FPExamActPage] El archivo (${targetSpreadsheetId}) está en la papelera o no existe en Drive.`)
                         useFPCourseStore.getState().updateCourse(activeCourse.id, {
-                            folderId: disc.folderId || activeCourse.folderId || '',
-                            folderName: disc.folderName || activeCourse.folderName || '',
-                            links: { ...(activeCourse.links || {}), ...disc.links },
+                            links: { ...(activeCourse.links || {}), examAct: null },
                         })
                         saveFPCloudRegistry().catch((err) => console.warn(err))
-                        targetSpreadsheetId = disc.links.examAct.spreadsheetId
-                        toast.success(`Archivo detectado en carpeta "${disc.folderName || activeCourse.cursoNumero}"`)
+                        targetSpreadsheetId = null
+                        toast('El archivo vinculado anteriormente fue eliminado o está en la papelera de Google Drive.', {
+                            icon: '⚠️',
+                            duration: 6000,
+                        })
                     }
-                } catch (e) {
-                    console.warn(e)
-                } finally {
-                    toast.dismiss(toastId)
-                    setPulling(false)
                 }
+            } catch (discErr) {
+                console.warn('[FPExamActPage] Error buscando en Drive:', discErr)
+            } finally {
+                toast.dismiss(toastId)
+                setPulling(false)
             }
 
             if (!targetSpreadsheetId) {

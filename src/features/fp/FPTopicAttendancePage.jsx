@@ -20,7 +20,7 @@ import {
     linkFPDocument,
 } from '../../infrastructure/google/sheetsService'
 import { saveFPCloudRegistry, autoDiscoverAndSyncCloudRegistry } from '../../infrastructure/google/fpCloudRegistry'
-import { discoverFolderAndFilesForCourse } from '../../infrastructure/google/fpDriveDiscovery'
+import { discoverFolderAndFilesForCourse, checkDriveFileStatus } from '../../infrastructure/google/fpDriveDiscovery'
 import { isAuthError, notifyAuthExpired } from '../../utils/authErrorHelper'
 import toast from 'react-hot-toast'
 
@@ -435,7 +435,12 @@ export default function FPTopicAttendancePage() {
             if (isAuthError(error)) {
                 notifyAuthExpired(() => executePull(spreadsheetId, sheetTitle, targetSheetId))
             } else {
-                toast.error('Error al traer los datos desde Google Sheets')
+                const errMsg = (error?.message || error?.result?.error?.message || '').toLowerCase()
+                if (errMsg.includes('not supported for this document') || errMsg.includes('precondition')) {
+                    toast.error('El archivo es un Excel (.xlsx). En Google Drive abrilo y hacé clic en "Archivo > Guardar como hoja de cálculo de Google" para sincronizar.', { duration: 9000 })
+                } else {
+                    toast.error('Error al traer los datos desde Google Sheets')
+                }
             }
         } finally {
             setPulling(false)
