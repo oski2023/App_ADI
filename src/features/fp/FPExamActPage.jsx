@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardBody } from '../../shared/components/Card'
 import Button from '../../shared/components/Button'
 import { Input } from '../../shared/components/Input'
@@ -52,9 +52,38 @@ export default function FPExamActPage() {
     const [selectedCourseId, setSelectedCourseId] = useState('')
     const activeCourse = courses.find((c) => c.id === selectedCourseId) || courses[0] || null
 
+    // Filtrado robusto multicapa: ID directo, spreadsheetId vinculado, número exacto o coincidencia numérica (ej. "396" vs "Curso Nº 396")
     const filteredActs = !activeCourse || selectedCourseId === 'ALL'
         ? acts
-        : acts.filter((a) => (a.cursoId && a.cursoId === activeCourse.id) || (a.cursoNumero && a.cursoNumero === activeCourse.cursoNumero))
+        : acts.filter((a) => {
+            if (a.cursoId && activeCourse.id && a.cursoId === activeCourse.id) return true
+            const courseSpreadsheetId = activeCourse.links?.examAct?.spreadsheetId
+            if (a.spreadsheetId && courseSpreadsheetId && a.spreadsheetId === courseSpreadsheetId) return true
+            const aCurso = (a.cursoNumero || '').trim().toLowerCase()
+            const cCurso = (activeCourse.cursoNumero || '').trim().toLowerCase()
+            if (aCurso && cCurso && aCurso === cCurso) return true
+            const aDigits = (a.cursoNumero || '').match(/\d+/)?.[0]
+            const cDigits = (activeCourse.cursoNumero || '').match(/\d+/)?.[0]
+            if (aDigits && cDigits && aDigits === cDigits) return true
+            return false
+        })
+
+    // Auto-reparación: asociar cursoId y cursoNumero a actas que pertenecen a este curso
+    useEffect(() => {
+        if (!activeCourse || !filteredActs.length) return
+        filteredActs.forEach((a) => {
+            const needsUpdate = (!a.cursoId && activeCourse.id) ||
+                (!a.cursoNumero && activeCourse.cursoNumero) ||
+                (!a.spreadsheetId && activeCourse.links?.examAct?.spreadsheetId)
+            if (needsUpdate) {
+                updateAct(a.id, {
+                    cursoId: a.cursoId || activeCourse.id,
+                    cursoNumero: a.cursoNumero || activeCourse.cursoNumero,
+                    spreadsheetId: a.spreadsheetId || activeCourse.links?.examAct?.spreadsheetId || '',
+                })
+            }
+        })
+    }, [activeCourse?.id, filteredActs.length])
 
     const [selectedId, setSelectedId] = useState(null)
     const selected = acts.find((a) => a.id === selectedId)
@@ -393,7 +422,12 @@ export default function FPExamActPage() {
                     return
                 }
 
-                const updatedId = importOrUpdateAct(data, targetActId)
+                const updatedId = importOrUpdateAct({
+                    ...data,
+                    spreadsheetId,
+                    cursoId: activeCourse?.id || data.cursoId || '',
+                    cursoNumero: data.cursoNumero || activeCourse?.cursoNumero || '',
+                }, targetActId)
                 setSelectedId(updatedId)
                 toast.success(`Acta traída desde Google Sheets (${data.students?.length || 0} estudiantes)`)
             } else {
@@ -402,7 +436,17 @@ export default function FPExamActPage() {
                     toast.error('No se encontraron actas en la hoja de cálculo')
                     return
                 }
-                syncAllFromCloud(allActs, spreadsheetId, activeCourse?.cursoNumero)
+                const enrichedActs = allActs.map((a) => ({
+                    ...a,
+                    spreadsheetId,
+                    cursoId: activeCourse?.id || a.cursoId || '',
+                    cursoNumero: a.cursoNumero || activeCourse?.cursoNumero || '',
+                    especialidad: a.especialidad || activeCourse?.especialidad || '',
+                    cfpNumero: a.cfpNumero || activeCourse?.cfpNumero || '',
+                    distrito: a.distrito || activeCourse?.distrito || '',
+                    instructor: a.instructor || activeCourse?.instructor || '',
+                }))
+                syncAllFromCloud(enrichedActs, spreadsheetId, activeCourse?.cursoNumero, activeCourse?.id)
                 toast.success(`Se sincronizaron ${allActs.length} acta(s) desde Google Sheets`)
             }
         } catch (error) {
@@ -465,7 +509,46 @@ export default function FPExamActPage() {
             return
         }
 
-        // Pull general de todas las actas
+        // Pull de las actas del curso activo (o general si se seleccionó 'ALL')
+        if (activeCourse && selectedCourseId !== 'ALL') {
+            let targetSpreadsheetId = activeCourse.links?.examAct?.spreadsheetId || examActLink?.spreadsheetId
+            let targetSheetTitle = activeCourse.links?.examAct?.sheetTitle || examActLink?.sheetTitle
+
+            if (!targetSpreadsheetId) {
+                setPulling(true)
+                const toastId = toast.loading('Buscando acta de examen en Drive...')
+                try {
+                    const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                    if (disc.success && disc.links?.examAct?.spreadsheetId) {
+                        useFPCourseStore.getState().updateCourse(activeCourse.id, {
+                            folderId: disc.folderId || activeCourse.folderId || '',
+                            folderName: disc.folderName || activeCourse.folderName || '',
+                            links: { ...(activeCourse.links || {}), ...disc.links },
+                        })
+                        saveFPCloudRegistry().catch((err) => console.warn(err))
+                        targetSpreadsheetId = disc.links.examAct.spreadsheetId
+                        toast.success(`Archivo detectado en carpeta "${disc.folderName || activeCourse.cursoNumero}"`)
+                    }
+                } catch (e) {
+                    console.warn(e)
+                } finally {
+                    toast.dismiss(toastId)
+                    setPulling(false)
+                }
+            }
+
+            if (!targetSpreadsheetId) {
+                setShowLinkModal(true)
+                return
+            }
+
+            const confirmMsg = `Esto va a sincronizar las actas de examen del Curso Nº ${activeCourse.cursoNumero || '—'} con Google Sheets. ¿Continuar?`
+            if (!window.confirm(confirmMsg)) return
+            await executePull(targetSpreadsheetId, targetSheetTitle, null)
+            return
+        }
+
+        // Pull general de todas las actas (modo ALL)
         setPulling(true)
         const toastId = toast.loading('Buscando actas de examen en Google Drive...')
         try {
@@ -514,7 +597,11 @@ export default function FPExamActPage() {
         if (!window.confirm(confirmMsg)) return
 
         for (const sItem of uniqueSpreadsheets) {
-            await executePull(sItem.spreadsheetId, sItem.sheetTitle)
+            try {
+                await executePull(sItem.spreadsheetId, sItem.sheetTitle, null)
+            } catch (err) {
+                console.warn(`Error al sincronizar spreadsheet ${sItem.spreadsheetId}:`, err)
+            }
         }
     }
 

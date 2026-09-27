@@ -115,20 +115,29 @@ const useFPExamActStore = create(
             // Sincronización completa (Espejo de Google Sheets)
             // Permite actualizar todas las actas o solo las pertenecientes a un spreadsheet/curso específico,
             // preservando las actas de otros cursos para evitar borrados accidentales.
-            syncAllFromCloud: (cloudActs, targetSpreadsheetId = null, targetCursoNumero = null) => {
+            syncAllFromCloud: (cloudActs, targetSpreadsheetId = null, targetCursoNumero = null, targetCursoId = null) => {
                 const currentActs = get().acts
                 const matchedCloudActs = cloudActs.map((cAct) => {
                     const match = currentActs.find((a) => {
                         if (cAct.id && a.id === cAct.id) return true
+                        if (targetCursoId && a.cursoId && a.cursoId === targetCursoId) {
+                            if (a.googleSheetTitle && cAct.googleSheetTitle && a.googleSheetTitle.trim().toLowerCase() === cAct.googleSheetTitle.trim().toLowerCase()) return true
+                        }
                         if (a.googleSheetTitle && cAct.googleSheetTitle && a.googleSheetTitle.trim().toLowerCase() === cAct.googleSheetTitle.trim().toLowerCase()) return true
                         const aCurso = (a.cursoNumero || '').trim().toLowerCase()
-                        const dCurso = (cAct.cursoNumero || '').trim().toLowerCase()
-                        return aCurso && dCurso && aCurso === dCurso
+                        const dCurso = (cAct.cursoNumero || targetCursoNumero || '').trim().toLowerCase()
+                        if (aCurso && dCurso && aCurso === dCurso) return true
+                        const aDigits = (a.cursoNumero || '').match(/\d+/)?.[0]
+                        const dDigits = (cAct.cursoNumero || targetCursoNumero || '').match(/\d+/)?.[0]
+                        if (aDigits && dDigits && aDigits === dDigits) return true
+                        return false
                     })
                     return {
                         ...emptyAct(),
                         ...(match || {}),
                         ...cAct,
+                        cursoId: cAct.cursoId || targetCursoId || match?.cursoId || '',
+                        cursoNumero: cAct.cursoNumero || targetCursoNumero || match?.cursoNumero || '',
                         spreadsheetId: cAct.spreadsheetId || targetSpreadsheetId || match?.spreadsheetId || '',
                         id: match ? match.id : (cAct.id || crypto.randomUUID()),
                     }
@@ -138,14 +147,27 @@ const useFPExamActStore = create(
                 if (targetSpreadsheetId) {
                     const actsFromOtherSheets = currentActs.filter((a) => {
                         if (a.spreadsheetId && a.spreadsheetId === targetSpreadsheetId) return false
-                        if (targetCursoNumero && a.cursoNumero && a.cursoNumero.trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        if (targetCursoId && a.cursoId && a.cursoId === targetCursoId) return false
+                        if (targetCursoNumero) {
+                            const aDigits = (a.cursoNumero || '').match(/\d+/)?.[0]
+                            const tDigits = targetCursoNumero.match(/\d+/)?.[0]
+                            if (aDigits && tDigits && aDigits === tDigits) return false
+                            if ((a.cursoNumero || '').trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        }
                         return true
                     })
                     finalActs = [...actsFromOtherSheets, ...matchedCloudActs]
-                } else if (targetCursoNumero) {
-                    const otherActs = currentActs.filter(
-                        (a) => (a.cursoNumero || '').trim().toLowerCase() !== targetCursoNumero.trim().toLowerCase()
-                    )
+                } else if (targetCursoId || targetCursoNumero) {
+                    const otherActs = currentActs.filter((a) => {
+                        if (targetCursoId && a.cursoId && a.cursoId === targetCursoId) return false
+                        if (targetCursoNumero) {
+                            const aDigits = (a.cursoNumero || '').match(/\d+/)?.[0]
+                            const tDigits = targetCursoNumero.match(/\d+/)?.[0]
+                            if (aDigits && tDigits && aDigits === tDigits) return false
+                            if ((a.cursoNumero || '').trim().toLowerCase() === targetCursoNumero.trim().toLowerCase()) return false
+                        }
+                        return true
+                    })
                     finalActs = [...otherActs, ...matchedCloudActs]
                 } else {
                     const incomingCursos = new Set(matchedCloudActs.map((a) => (a.cursoNumero || '').trim().toLowerCase()).filter(Boolean))
