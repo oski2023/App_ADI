@@ -441,18 +441,55 @@ export default function SettingsPage() {
                     <CardBody className="space-y-4">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                                <p className="text-sm font-medium text-text-primary">Restaurar de Fábrica</p>
-                                <p className="text-xs text-text-secondary pr-4">Esta acción eliminará de forma irreversible todos los datos locales, notas y configuraciones guardadas en este dispositivo.</p>
+                                <p className="text-sm font-medium text-text-primary">Restaurar de Fábrica (Preservando Administrativo)</p>
+                                <p className="text-xs text-text-secondary pr-4">
+                                    Esta acción eliminará los cursos, planillas y notas locales para empezar de cero.
+                                    <span className="block mt-1 font-semibold text-emerald-500">
+                                        ✓ Los datos y meses cargados en la solapa Administrativo se conservarán intactos.
+                                    </span>
+                                </p>
                             </div>
                             <Button
                                 variant="outline"
                                 className="!border-error !text-error hover:!bg-error hover:!text-white shrink-0"
                                 onClick={() => {
-                                    if (window.confirm('🚨 ¿ELIMINAR TODOS LOS DATOS?\Esta acción NO se puede deshacer. Vas a perder alumnos, notas y configuraciones locales.')) {
-                                        localStorage.clear()
-                                        sessionStorage.clear()
-                                        window.location.href = '/'
+                                    const confirmMsg = '🚨 ¿REINICIAR DATOS LOCALES?\n\nEsta acción borrará los cursos, planillas y notas guardadas en este dispositivo para empezar de cero.\n\n✓ Los datos cargados en la solapa ADMINISTRATIVO se mantendrán guardados y NO se borrarán.\n\n¿Deseás continuar?'
+                                    if (!window.confirm(confirmMsg)) return
+
+                                    // Respaldar únicamente los datos de Administrativo y modo FP
+                                    const adminRecords = localStorage.getItem('adi_fp_admin_records')
+                                    const adminLinks = localStorage.getItem('adi_fp_admin_links')
+                                    const adminSubtitle = localStorage.getItem('adi_fp_admin_subtitle')
+
+                                    let savedSettings = null
+                                    try {
+                                        const rawSettings = localStorage.getItem('adi_settings')
+                                        if (rawSettings) {
+                                            const parsed = JSON.parse(rawSettings)
+                                            if (parsed?.state) {
+                                                savedSettings = JSON.stringify({
+                                                    state: {
+                                                        ...parsed.state,
+                                                        profileType: parsed.state.profileType || 'fp',
+                                                    },
+                                                    version: parsed.version || 0,
+                                                })
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.warn(e)
                                     }
+
+                                    localStorage.clear()
+                                    sessionStorage.clear()
+
+                                    // Restaurar solapa Administrativo y configuración FP
+                                    if (adminRecords) localStorage.setItem('adi_fp_admin_records', adminRecords)
+                                    if (adminLinks) localStorage.setItem('adi_fp_admin_links', adminLinks)
+                                    if (adminSubtitle) localStorage.setItem('adi_fp_admin_subtitle', adminSubtitle)
+                                    if (savedSettings) localStorage.setItem('adi_settings', savedSettings)
+
+                                    window.location.href = '/'
                                 }}
                             >
                                 Borrar Datos y Reiniciar
