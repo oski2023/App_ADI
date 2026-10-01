@@ -119,10 +119,22 @@ export async function initGoogleAuth() {
 }
 
 // Reconectar con un clic real del usuario: intenta silencioso primero, y si Google lo pide, muestra el consentimiento
-export function reconnectGoogle() {
+export function reconnectGoogle(forceAccountSelect = false) {
     if (!tokenClient) return Promise.reject(new Error('Google Auth no inicializado'))
 
     return new Promise((resolve, reject) => {
+        if (forceAccountSelect) {
+            tokenClient.callback = (response) => {
+                if (response.error) return reject(response)
+                setGapiToken(response)
+                console.log('[GoogleAuth] Reconectado con seleccion de cuenta')
+                scheduleAutoRefresh(response.expires_in || 3600)
+                resolve(response)
+            }
+            tokenClient.requestAccessToken({ prompt: 'select_account consent' })
+            return
+        }
+
         tokenClient.callback = (response) => {
             if (!response.error) {
                 setGapiToken(response)
@@ -130,7 +142,6 @@ export function reconnectGoogle() {
                 scheduleAutoRefresh(response.expires_in || 3600)
                 return resolve(response)
             }
-            // El intento silencioso falló, reintentar mostrando el consentimiento
             tokenClient.callback = (response2) => {
                 if (response2.error) return reject(response2)
                 setGapiToken(response2)
@@ -215,4 +226,10 @@ export function getAccessToken() {
         if (token?.access_token) return token.access_token
     }
     return currentAccessToken
+}
+
+
+// Permite cambiar o reautenticar la cuenta de Google con el selector de cuentas
+export function switchGoogleAccount() {
+    return reconnectGoogle(true)
 }

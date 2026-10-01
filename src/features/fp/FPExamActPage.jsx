@@ -235,7 +235,7 @@ export default function FPExamActPage() {
             setSyncing(true)
             const toastId = toast.loading('Buscando acta de examen en Drive...')
             try {
-                const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero)
+                const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero, courseForAct.folderId)
                 if (disc.success && disc.links?.examAct?.spreadsheetId) {
                     useFPCourseStore.getState().updateCourse(courseForAct.id, {
                         folderId: disc.folderId || courseForAct.folderId || '',
@@ -303,7 +303,7 @@ export default function FPExamActPage() {
 
                 if (!targetSpreadsheetId && courseForAct) {
                     try {
-                        const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero)
+                        const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero, courseForAct.folderId)
                         if (disc.success && disc.links?.examAct?.spreadsheetId) {
                             useFPCourseStore.getState().updateCourse(courseForAct.id, {
                                 folderId: disc.folderId || courseForAct.folderId || '',
@@ -356,7 +356,7 @@ export default function FPExamActPage() {
 
         if (!hasAnyLink) {
             if (activeCourse) {
-                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero, activeCourse.folderId)
                 if (disc.success && disc.links?.examAct?.spreadsheetId) {
                     useFPCourseStore.getState().updateCourse(activeCourse.id, {
                         folderId: disc.folderId || activeCourse.folderId || '',
@@ -484,7 +484,7 @@ export default function FPExamActPage() {
                 setPulling(true)
                 const toastId = toast.loading('Buscando acta de examen en Drive...')
                 try {
-                    const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero)
+                    const disc = await discoverFolderAndFilesForCourse(courseForAct.spreadsheetId || courseForAct.spreadsheetUrl, courseForAct.cursoNumero, courseForAct.folderId)
                     if (disc.success && disc.links?.examAct?.spreadsheetId) {
                         useFPCourseStore.getState().updateCourse(courseForAct.id, {
                             folderId: disc.folderId || courseForAct.folderId || '',
@@ -524,7 +524,7 @@ export default function FPExamActPage() {
 
             try {
                 // Verificar siempre en Google Drive para detectar archivos nuevos, renombrados o si el vinculado fue a la papelera
-                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero, activeCourse.folderId)
                 if (disc.success && disc.links?.examAct?.spreadsheetId) {
                     const discovered = disc.links.examAct
                     const isNewOrDifferent = !targetSpreadsheetId || targetSpreadsheetId !== discovered.spreadsheetId
@@ -1233,7 +1233,7 @@ export default function FPExamActPage() {
                                     const course = activeCourse
                                     let found = false
                                     if (course) {
-                                        const disc = await discoverFolderAndFilesForCourse(course.spreadsheetId || course.spreadsheetUrl, course.cursoNumero)
+                                        const disc = await discoverFolderAndFilesForCourse(course.spreadsheetId || course.spreadsheetUrl, course.cursoNumero, course.folderId)
                                         if (disc.success && disc.links?.examAct?.spreadsheetId) {
                                             useFPCourseStore.getState().updateCourse(course.id, {
                                                 folderId: disc.folderId || course.folderId || '',

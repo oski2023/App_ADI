@@ -206,6 +206,41 @@ export async function linkFPDocument(urlOrId) {
     }
 
     try {
+        let driveMeta = null
+        if (typeof gapi !== 'undefined' && gapi?.client?.drive) {
+            try {
+                const driveRes = await gapi.client.drive.files.get({
+                    fileId: id,
+                    fields: 'id, name, mimeType, trashed',
+                })
+                driveMeta = driveRes?.result
+            } catch (driveErr) {
+                const status = driveErr?.status || driveErr?.result?.error?.code
+                if (status === 403) {
+                    const err = new Error('PERMISSION_DENIED')
+                    err.status = 403
+                    throw err
+                }
+                if (status === 404) {
+                    const err = new Error('NOT_FOUND')
+                    err.status = 404
+                    throw err
+                }
+            }
+        }
+
+        if (driveMeta) {
+            const isExcel = (driveMeta.name || '').toLowerCase().endsWith('.xlsx') ||
+                (driveMeta.mimeType || '').includes('openxml') ||
+                (driveMeta.mimeType || '').includes('excel')
+            if (isExcel) {
+                const err = new Error('EXCEL_FILE')
+                err.status = 400
+                err.fileName = driveMeta.name
+                throw err
+            }
+        }
+
         const info = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: id })
 
         let sheet = info.result.sheets[0]

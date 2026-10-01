@@ -270,7 +270,7 @@ export default function FPAttendanceSheetPage() {
             setSyncing(true)
             const toastId = toast.loading('Buscando archivo de Asistencia en Drive...')
             try {
-                const disc = await discoverFolderAndFilesForCourse(courseForSheet.spreadsheetId || courseForSheet.spreadsheetUrl, courseForSheet.cursoNumero)
+                const disc = await discoverFolderAndFilesForCourse(courseForSheet.spreadsheetId || courseForSheet.spreadsheetUrl, courseForSheet.cursoNumero, courseForSheet.folderId)
                 if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
                     useFPCourseStore.getState().updateCourse(courseForSheet.id, {
                         folderId: disc.folderId || courseForSheet.folderId || '',
@@ -338,7 +338,7 @@ export default function FPAttendanceSheetPage() {
 
                 if (!targetSpreadsheetId && courseForSheet) {
                     try {
-                        const disc = await discoverFolderAndFilesForCourse(courseForSheet.spreadsheetId || courseForSheet.spreadsheetUrl, courseForSheet.cursoNumero)
+                        const disc = await discoverFolderAndFilesForCourse(courseForSheet.spreadsheetId || courseForSheet.spreadsheetUrl, courseForSheet.cursoNumero, courseForSheet.folderId)
                         if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
                             useFPCourseStore.getState().updateCourse(courseForSheet.id, {
                                 folderId: disc.folderId || courseForSheet.folderId || '',
@@ -391,7 +391,7 @@ export default function FPAttendanceSheetPage() {
 
         if (!hasAnyLink) {
             if (activeCourse) {
-                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero, activeCourse.folderId)
                 if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
                     useFPCourseStore.getState().updateCourse(activeCourse.id, {
                         folderId: disc.folderId || activeCourse.folderId || '',
@@ -589,7 +589,7 @@ export default function FPAttendanceSheetPage() {
                 setPulling(true)
                 const toastId = toast.loading('Buscando archivo de Asistencia en Drive...')
                 try {
-                    const disc = await discoverFolderAndFilesForCourse(courseForSheet.spreadsheetId || courseForSheet.spreadsheetUrl, courseForSheet.cursoNumero)
+                    const disc = await discoverFolderAndFilesForCourse(courseForSheet.spreadsheetId || courseForSheet.spreadsheetUrl, courseForSheet.cursoNumero, courseForSheet.folderId)
                     if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
                         useFPCourseStore.getState().updateCourse(courseForSheet.id, {
                             folderId: disc.folderId || courseForSheet.folderId || '',
@@ -629,7 +629,7 @@ export default function FPAttendanceSheetPage() {
 
             try {
                 // Verificar siempre en Google Drive para detectar archivos nuevos, renombrados o si el vinculado fue a la papelera
-                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero)
+                const disc = await discoverFolderAndFilesForCourse(activeCourse.spreadsheetId || activeCourse.spreadsheetUrl, activeCourse.cursoNumero, activeCourse.folderId)
                 if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
                     const discovered = disc.links.attendanceSheet
                     const isNewOrDifferent = !targetSpreadsheetId || targetSpreadsheetId !== discovered.spreadsheetId
@@ -1453,7 +1453,7 @@ export default function FPAttendanceSheetPage() {
                                     const course = matchingCourse || activeCourse
                                     let found = false
                                     if (course) {
-                                        const disc = await discoverFolderAndFilesForCourse(course.spreadsheetId || course.spreadsheetUrl, course.cursoNumero)
+                                        const disc = await discoverFolderAndFilesForCourse(course.spreadsheetId || course.spreadsheetUrl, course.cursoNumero, course.folderId)
                                         if (disc.success && disc.links?.attendanceSheet?.spreadsheetId) {
                                             useFPCourseStore.getState().updateCourse(course.id, {
                                                 folderId: disc.folderId || course.folderId || '',

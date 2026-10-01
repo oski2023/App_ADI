@@ -609,7 +609,7 @@ export default function FPCoursesPage() {
         setDiscovering(true)
         const toastId = toast.loading(`Buscando carpeta de Curso Nº ${courseToScan.cursoNumero || '—'} en Google Drive...`)
         try {
-            const disc = await discoverFolderAndFilesForCourse(courseToScan.spreadsheetId || courseToScan.spreadsheetUrl, courseToScan.cursoNumero)
+            const disc = await discoverFolderAndFilesForCourse(courseToScan.spreadsheetId || courseToScan.spreadsheetUrl, courseToScan.cursoNumero, courseToScan.folderId)
             toast.dismiss(toastId)
             if (disc.success) {
                 updateCourse(courseToScan.id, {

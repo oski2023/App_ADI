@@ -11,6 +11,17 @@ import { isGoogleConfigured } from './googleConfig'
 import { extractSpreadsheetId } from './sheetsService'
 
 /**
+ * Extrae el ID de una carpeta de Google Drive a partir de una URL o devuelve el ID tal cual
+ * @param {string} urlOrId Link de Google Drive (ej: https://drive.google.com/drive/folders/1ABC... o 1ABC...)
+ * @returns {string|null}
+ */
+export function extractFolderId(urlOrId) {
+    if (!urlOrId || typeof urlOrId !== 'string') return null
+    const match = urlOrId.match(/\/folders\/([a-zA-Z0-9-_]+)/)
+    return match ? match[1] : (urlOrId.includes('/') ? null : urlOrId.trim())
+}
+
+/**
  * Clasifica un archivo de Google Sheets según la nomenclatura oficial del usuario:
  * - "Ficha de curso xxx" -> 'course'
  * - "Planilla de tema y asistencia del instructor" -> 'topicAttendance'
@@ -118,7 +129,7 @@ export async function checkDriveFileStatus(fileId) {
  *   error?: string
  * }>}
  */
-export async function discoverFolderAndFilesForCourse(urlOrSpreadsheetId = null, cursoNumero = '') {
+export async function discoverFolderAndFilesForCourse(urlOrSpreadsheetId = null, cursoNumero = '', knownFolderId = null) {
     if (!isGoogleConfigured()) {
         return { success: false, error: 'Google no está configurado en esta aplicación.', links: {} }
     }
