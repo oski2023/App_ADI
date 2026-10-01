@@ -68,6 +68,12 @@ export default function FPTopicAttendancePage() {
             return false
         })
 
+    const [selectedId, setSelectedId] = useState(null)
+    const activeTabId = (selectedId && filteredSheets.some((s) => s.id === selectedId))
+        ? selectedId
+        : (filteredSheets[0]?.id || null)
+    const selected = sheets.find((s) => s.id === activeTabId)
+
     // Auto-reparación: asociar cursoId y cursoNumero a planillas que pertenecen a este curso
     useEffect(() => {
         if (!activeCourse || !filteredSheets.length) return
@@ -116,11 +122,6 @@ export default function FPTopicAttendancePage() {
         })
     }, [filteredSheets.length, activeTabId])
 
-    const [selectedId, setSelectedId] = useState(null)
-    const activeTabId = (selectedId && filteredSheets.some((s) => s.id === selectedId))
-        ? selectedId
-        : (filteredSheets[0]?.id || null)
-    const selected = sheets.find((s) => s.id === activeTabId)
 
     const topicLink = useFPGoogleLinksStore((s) => s.links.topicAttendance)
     const setLink = useFPGoogleLinksStore((s) => s.setLink)
